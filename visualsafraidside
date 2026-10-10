@@ -183,7 +183,7 @@ local D = {
     avaPick = "Pick a player", avaMethod = "Auto", avaCopyBody = true, avaKeep = false, avaName = "",
     charShow = "My selection", charView = "Spin", charZoom = 1, charRun = false, espPvHp = 0.72,
     acc_Back = {}, acc_Head = {}, acc_Body = {}, acc_Arms = {}, acc_Feet = {}, acc_Floating = {},
-    catQ = "", catType = "All accessories", catSort = "Bestselling", catFree = false, catKeep = true, catMirror = true, catFit = "Auto", catId = "",
+    catQ = "", catType = "All accessories", catSort = "Bestselling", catFree = false, catKeep = true, catMirror = true, catFit = "Auto", catMount = "Auto", catId = "",
     lkCat = true, lkAcc = true, lkFx = true, lkAva = true, lkWorld = false, lkCode = "",
 
     cosOn = false, cosTarget = "Self", cosRainbow = false,
@@ -41162,6 +41162,13 @@ local function stripWrap(inst)
     end
 end
 
+local LAYER_CLOTH = { TShirt = true, Shirt = true, Pants = true, Jacket = true, Sweater = true, Shorts = true, LeftShoe = true, RightShoe = true, DressSkirt = true }
+
+local function isClothingAcc(inst)
+    local ok, n = pcall(function() return inst.AccessoryType.Name end)
+    return ok and LAYER_CLOTH[n] == true
+end
+
 local function charHasCage(ch)
     local ok, r = pcall(function() return ch:FindFirstChildWhichIsA("WrapTarget", true) end)
     return ok and r ~= nil
@@ -41174,10 +41181,9 @@ local function isWelded(handle)
     return false
 end
 
-local function weldByHand(inst, ch)
-    local handle = inst:FindFirstChild("Handle")
-    if not handle or not handle:IsA("BasePart") then return false end
-    local ok = pcall(function()
+local function weldHandle(handle, ch, ap)
+    local made
+    pcall(function()
         for _, a in ipairs(handle:GetChildren()) do
             if a:IsA("Attachment") then
                 for _, part in ipairs(ch:GetChildren()) do
@@ -41189,6 +41195,7 @@ local function weldByHand(inst, ch)
                             wd.Part0, wd.Part1 = part, handle
                             wd.C0, wd.C1 = b.CFrame, a.CFrame
                             wd.Parent = handle
+                            made = wd
                             return
                         end
                     end
@@ -41201,12 +41208,12 @@ local function weldByHand(inst, ch)
             wd.Name = "AccessoryWeld"
             wd.Part0, wd.Part1 = head, handle
             wd.C0 = CFrame.new(0, head.Size.Y / 2, 0)
-            local okAp, ap = pcall(function() return inst.AttachmentPoint end)
-            wd.C1 = (okAp and typeof(ap) == "CFrame") and ap or CFrame.new()
+            wd.C1 = (typeof(ap) == "CFrame") and ap or CFrame.new()
             wd.Parent = handle
+            made = wd
         end
     end)
-    return ok and isWelded(handle)
+    return made
 end
 
 local function meshFailed(handle)
@@ -41226,59 +41233,180 @@ end
 
 local refreshWorn, refreshMarks
 
-local function verifyWorn(w, inst)
-    if w.inst ~= inst or inst.Parent == nil then return end
-    local ch = lp.Character
-    if not ch or inst.Parent ~= ch then return end
-    local handle = inst:FindFirstChild("Handle")
-    local parts = {}
-    if w.rigid then
-        parts[#parts + 1] = "rigid fit"
-    elseif w.layered then
-        parts[#parts + 1] = "layered fit"
-    end
-    if not handle or not handle:IsA("BasePart") then
-        parts[#parts + 1] = "no Handle in this asset"
-    else
-        pcall(function() if handle.Anchored then handle.Anchored = false end end)
-        if not isWelded(handle) then
-            if weldByHand(inst, ch) then parts[#parts + 1] = "joined by hand" else parts[#parts + 1] = "could not join the body" end
-        end
-        pcall(function() if handle.Transparency >= 0.95 then handle.Transparency = 0 end end)
-        if w.inst == inst and meshFailed(handle) then parts[#parts + 1] = "mesh did not load (blocked or removed on Roblox)" end
-    end
+local function finishNote(w, inst, handle, parts)
+    if handle and w.inst == inst and meshFailed(handle) then parts[#parts + 1] = "mesh did not load (blocked or removed on Roblox)" end
     if w.inst ~= inst then return end
     w.note = #parts > 0 and table.concat(parts, ", ") or "worn"
     setWornStatus(w.name .. ": " .. w.note)
     if refreshWorn then refreshWorn() end
 end
 
-local function attach(w)
+local attach
+
+local function recoverSoon(w)
+    task.defer(function()
+        if M.byId[w.id] == w and w.tpl and not w.busy then
+            w.fix = (w.fix or 0) + 1
+            attach(w)
+        end
+    end)
+end
+
+local function watchWorn(w, inst, ap)
+    local ch = lp.Character
+    local parts = {}
+    if w.rigid then
+        parts[#parts + 1] = "rigid fit"
+    elseif w.layered then
+        parts[#parts + 1] = "layered fit"
+    end
+    if w.hand then parts[#parts + 1] = "joined by hand" end
+    local prev = 0
+    for _, at in ipairs({ 0.1, 0.4, 0.8 }) do
+        task.wait(at - prev)
+        prev = at
+        if w.inst ~= inst or inst.Parent ~= ch then return end
+        local handle = inst:FindFirstChild("Handle")
+        if not handle or not handle:IsA("BasePart") then
+            if at >= 0.8 then parts[#parts + 1] = "no Handle in this asset" end
+        else
+            pcall(function() if handle.Anchored then handle.Anchored = false end end)
+            if not isWelded(handle) then
+                if weldHandle(handle, ch, ap) then
+                    w.hand = true
+                    if not table.find(parts, "joined by hand") then parts[#parts + 1] = "joined by hand" end
+                elseif at >= 0.8 then
+                    parts[#parts + 1] = "could not join the body"
+                end
+            end
+            local hrp = ch:FindFirstChild("HumanoidRootPart")
+            local okD, far = pcall(function() return hrp ~= nil and (handle.Position - hrp.Position).Magnitude > 30 end)
+            if okD and far then
+                if (cfg.catMount or "Auto") == "Auto" then
+                    w.kicks = (w.kicks or 0) + 1
+                    recoverSoon(w)
+                else
+                    setWornStatus(w.name .. ": it drifted away from the body - set Mount to Auto or Detached")
+                end
+                return
+            end
+            pcall(function() if at >= 0.8 and handle.Transparency >= 0.95 then handle.Transparency = 0 end end)
+        end
+    end
+    finishNote(w, inst, inst:FindFirstChild("Handle"), parts)
+end
+
+local function onGone(w, inst, ch, parent)
+    if w.inst ~= inst or parent == ch or M.byId[w.id] ~= w then return end
+    if lp.Character ~= ch or not ch.Parent then return end
+    local hum = ch:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    local now = os.clock()
+    w.gone = w.gone or {}
+    w.gone[#w.gone + 1] = now
+    local recent = 0
+    for _, tm in ipairs(w.gone) do
+        if now - tm < 12 then recent = recent + 1 end
+    end
+    if now - (w.t0 or 0) < 0.8 or recent >= 2 then
+        w.kicks = (w.kicks or 0) + 1
+        if (cfg.catMount or "Auto") == "Auto" then
+            setWornStatus(w.name .. ": the game removes it from the character - fitting it from outside")
+            recoverSoon(w)
+        end
+    end
+end
+
+local function mountFree(w, ch, auto)
+    local inst = w.tpl:Clone()
+    local ap
+    pcall(function() ap = inst.AttachmentPoint end)
+    stripWrap(inst)
+    local handle = inst:FindFirstChild("Handle")
+    if not handle or not handle:IsA("BasePart") then
+        pcall(function() inst:Destroy() end)
+        return false
+    end
+    local model = Instance.new("Model")
+    model.Name = TAG .. "cat"
+    for _, c in ipairs(inst:GetChildren()) do c.Parent = model end
+    pcall(function() inst:Destroy() end)
+    for _, d in ipairs(model:GetDescendants()) do
+        if d:IsA("BasePart") then
+            d.Anchored = false
+            d.CanCollide = false
+            d.CanQuery = false
+            d.CanTouch = false
+            d.Massless = true
+        end
+    end
+    local wd = weldHandle(handle, ch, ap)
+    if not wd then
+        pcall(function() model:Destroy() end)
+        return false
+    end
+    pcall(function() handle.CFrame = wd.Part0.CFrame * wd.C0 * wd.C1:Inverse() end)
+    model.Parent = FX.folder()
+    w.inst, w.free, w.rigid, w.layered = model, true, true, false
+    w.note = auto and "fitted from outside (the game removes items put on the character)" or "fitted from outside"
+    task.spawn(function()
+        local parts = { w.note }
+        finishNote(w, model, handle, parts)
+    end)
+    return true
+end
+
+attach = function(w)
     local ch = lp.Character
     if not ch or not ch.Parent or not w.tpl then return false end
     if w.cls then return attachCloth(w, ch) end
     local hum = ch:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
-    if w.inst then pcall(function() w.inst:Destroy() end) end
+    local old = w.inst
+    w.inst = nil
+    if old then pcall(function() old:Destroy() end) end
+    local pref = cfg.catMount or "Auto"
+    if pref == "Detached" or (pref == "Auto" and (w.kicks or 0) >= 1) then
+        w.free = false
+        local okF = mountFree(w, ch, pref == "Auto")
+        if okF then return true end
+    end
+    w.free = false
     local inst = w.tpl:Clone()
     local layered = hasWrap(inst)
     local mode = cfg.catFit
     local rigid = false
-    if layered and (mode == "Rigid" or (mode ~= "Layered" and not charHasCage(ch))) then
+    if layered and (mode == "Rigid" or (mode ~= "Layered" and (not charHasCage(ch) or not isClothingAcc(inst)))) then
         stripWrap(inst)
         rigid = true
     end
-    w.layered, w.rigid, w.note = layered, rigid, nil
+    local ap
+    pcall(function() ap = inst.AttachmentPoint end)
+    w.layered, w.rigid, w.note, w.hand = layered, rigid, nil, false
     w.inst = inst
+    w.t0 = os.clock()
     local ok = pcall(function() hum:AddAccessory(inst) end)
     if not ok or inst.Parent ~= ch then pcall(function() inst.Parent = ch end) end
     local on = inst.Parent == ch
-    if on then task.delay(0.8, function() pcall(verifyWorn, w, inst) end) end
+    if on then
+        local handle = inst:FindFirstChild("Handle")
+        if handle and handle:IsA("BasePart") and not isWelded(handle) then
+            if weldHandle(handle, ch, ap) then w.hand = true end
+        end
+        inst.AncestryChanged:Connect(function(_, parent) onGone(w, inst, ch, parent) end)
+        task.spawn(watchWorn, w, inst, ap)
+    end
     return on
 end
 
 local function wornOk(w, ch)
-    if not w.inst or w.inst.Parent ~= ch then return false end
+    if not w.inst then return false end
+    if w.free then
+        local h = w.inst:FindFirstChild("Handle")
+        local wd = h and h:FindFirstChild("AccessoryWeld")
+        return w.inst.Parent ~= nil and wd ~= nil and wd.Part0 ~= nil and wd.Part0:IsDescendantOf(ch)
+    end
+    if w.inst.Parent ~= ch then return false end
     local prop = w.cls and CLOTH_PROP[w.cls]
     if not prop then return true end
     local okW, want = pcall(function() return w.tpl[prop] end)
@@ -41298,9 +41426,11 @@ local function dropWorn(w)
     end
     if M.byId[w.id] == w then M.byId[w.id] = nil end
     local cls = w.cls
-    if w.inst and not cls then pcall(function() w.inst:Destroy() end) end
+    local inst = w.inst
+    w.inst = nil
+    if inst and not cls then pcall(function() inst:Destroy() end) end
     if w.tpl then pcall(function() w.tpl:Destroy() end) end
-    w.inst, w.tpl = nil, nil
+    w.tpl = nil
     if cls then
         local other = false
         for _, y in ipairs(M.worn) do
@@ -41322,6 +41452,7 @@ function M.refit()
     for _, w in ipairs(M.worn) do
         if w.tpl and not w.busy and not w.cls then
             w.fix = 0
+            w.kicks, w.gone = nil, nil
             attach(w)
         end
     end
@@ -41423,9 +41554,143 @@ function M.wearText(text)
     return M.wear(id)
 end
 
+local MINE = { list = {}, sig = "" }
+M.mine = MINE
+local refreshMine
+
+local function catalogCloth(cls)
+    for _, w in ipairs(M.worn) do
+        if w.cls == cls then return true end
+    end
+    return false
+end
+
+local function ours(inst)
+    if string.sub(inst.Name, 1, #TAG) == TAG then return true end
+    for _, w in ipairs(M.worn) do
+        if w.inst == inst then return true end
+    end
+    return false
+end
+
+local function accKind(c)
+    local ok, n = pcall(function() return c.AccessoryType.Name end)
+    if ok and type(n) == "string" and n ~= "Unknown" then return n end
+    return "Accessory"
+end
+
+function M.mineScan()
+    local ch = lp.Character
+    local alive = ch ~= nil and ch.Parent ~= nil
+    local keep, known = {}, {}
+    for _, r in ipairs(MINE.list) do
+        local good = alive and r.ch == ch
+        if good and not r.removed then
+            good = r.inst.Parent == r.home and not ours(r.inst)
+            if good and r.kind == "cloth" and (catalogCloth(r.inst.ClassName) or ORIGV[r.inst]) then good = false end
+        end
+        if good then keep[#keep + 1] = r; known[r.inst] = true end
+    end
+    if alive then
+        local function add(c, kind, name, sub, home)
+            if known[c] then return end
+            known[c] = true
+            keep[#keep + 1] = { inst = c, kind = kind, name = name, sub = sub, home = home, ch = ch, removed = false }
+        end
+        for _, c in ipairs(ch:GetChildren()) do
+            if c:IsA("Accessory") then
+                if not ours(c) then add(c, "acc", c.Name, accKind(c), ch) end
+            elseif CLOTH_PROP[c.ClassName] and not catalogCloth(c.ClassName) and not ORIGV[c] and string.sub(c.Name, 1, #TAG) ~= TAG then
+                add(c, "cloth", AT_NAME[CLOTH_AT[c.ClassName]] or c.ClassName, "classic clothing", ch)
+            end
+        end
+        local head = ch:FindFirstChild("Head")
+        if head then
+            local f = head:FindFirstChild("face") or head:FindFirstChildOfClass("Decal")
+            if f and f:IsA("Decal") and string.sub(f.Name, 1, #TAG) ~= TAG then add(f, "face", "Face", "head decal", head) end
+        end
+    end
+    MINE.list = keep
+    return keep
+end
+
+local function mineSig()
+    local t = {}
+    for _, r in ipairs(MINE.list) do t[#t + 1] = r.name .. "|" .. r.sub .. "|" .. (r.removed and "1" or "0") end
+    return table.concat(t, ";")
+end
+
+function M.mineRefresh(force)
+    M.mineScan()
+    local sg = mineSig()
+    if force or sg ~= MINE.sig then
+        MINE.sig = sg
+        if refreshMine then refreshMine() end
+    end
+end
+
+function M.mineRemove(r)
+    if not r or r.removed then return false end
+    local ok = pcall(function() r.inst.Parent = nil end)
+    if ok and r.inst.Parent == nil then
+        r.removed = true
+        MINE.say = r.name .. " taken off - press Put back to wear it again"
+    else
+        MINE.say = "Could not take " .. r.name .. " off"
+    end
+    M.mineRefresh(true)
+    return r.removed
+end
+
+function M.mineRestore(r)
+    if not r or not r.removed then return false end
+    local ch = lp.Character
+    if not ch or not ch.Parent or r.ch ~= ch then
+        M.mineRefresh(true)
+        return false
+    end
+    if r.kind == "cloth" and catalogCloth(r.inst.ClassName) then
+        MINE.say = "Take the catalog " .. r.name .. " off first (Wearing now), then put this one back"
+        M.mineRefresh(true)
+        return false
+    end
+    pcall(function() r.inst.Parent = r.home end)
+    if r.kind == "acc" and r.inst.Parent == ch then
+        local handle = r.inst:FindFirstChild("Handle")
+        if handle and handle:IsA("BasePart") and not isWelded(handle) then
+            local ap
+            pcall(function() ap = r.inst.AttachmentPoint end)
+            weldHandle(handle, ch, ap)
+        end
+    end
+    if r.inst.Parent == r.home then
+        r.removed = false
+        MINE.say = r.name .. " is back"
+    else
+        MINE.say = "Could not put " .. r.name .. " back"
+    end
+    M.mineRefresh(true)
+    return not r.removed
+end
+
+function M.mineRestoreAll()
+    local n = 0
+    for _, r in ipairs(MINE.list) do
+        if r.removed and M.mineRestore(r) then n = n + 1 end
+    end
+    if n > 0 then MINE.say = n .. (n == 1 and " item is back" or " items are back") end
+    M.mineRefresh(true)
+    return n
+end
+
 bind(lp.CharacterAdded, function(ch)
     ORIGV, MADE = {}, {}
-    for _, w in ipairs(M.worn) do w.inst = nil; w.fix = 0 end
+    MINE.list, MINE.sig, MINE.say = {}, "", nil
+    for _, w in ipairs(M.worn) do
+        local old = w.inst
+        w.inst, w.fix, w.kicks, w.gone = nil, 0, nil, nil
+        if old and w.free then pcall(function() old:Destroy() end) end
+    end
     if #M.worn == 0 then return end
     if not cfg.catKeep then
         M.takeAllOff()
@@ -41793,6 +42058,37 @@ refreshWorn = function()
     setWornStatus(M.wornStatus)
 end
 
+refreshMine = function()
+    local u = M.mineUi
+    if not u then return end
+    for _, c in ipairs(u.list:GetChildren()) do
+        if c:IsA("GuiObject") and c ~= u.none then c:Destroy() end
+    end
+    local n = #MINE.list
+    for i, r in ipairs(MINE.list) do
+        local row = new("Frame", { Size = UDim2.new(1, 0, 0, 36), Position = UDim2.fromOffset(0, (i - 1) * 40), BorderSizePixel = 0 }, u.list)
+        bindTheme(row, "BackgroundColor3", "off")
+        corner(row, 9)
+        local nm = label(row, r.name, 12, "text", F.med, XL)
+        nm.Position = UDim2.fromOffset(10, 3); nm.Size = UDim2.new(1, -96, 0, 17); nm.TextTruncate = Enum.TextTruncate.AtEnd
+        local sub = label(row, r.removed and "taken off  |  press Put back" or r.sub, 10, "dim", F.reg, XL)
+        sub.Position = UDim2.fromOffset(10, 19); sub.Size = UDim2.new(1, -96, 0, 14); sub.TextTruncate = Enum.TextTruncate.AtEnd
+        if r.removed then nm.TextTransparency = 0.45 end
+        local b = new("TextButton", { Size = UDim2.fromOffset(74, 28), Position = UDim2.new(1, -78, 0, 4), Text = r.removed and "Put back" or "Take off", TextSize = 11, Font = F.bold,
+            AutoButtonColor = false, BorderSizePixel = 0 }, row)
+        bindTheme(b, "BackgroundColor3", "panel2"); bindTheme(b, "TextColor3", r.removed and "text" or "dim")
+        corner(b, 8)
+        b.Activated:Connect(function()
+            if r.removed then M.mineRestore(r) else M.mineRemove(r) end
+        end)
+    end
+    u.holder.Size = UDim2.new(1, 0, 0, n > 0 and (n * 40) or 24)
+    u.none.Visible = n == 0
+    local t = MINE.say or ""
+    u.status.Text = t
+    u.status.Visible = t ~= ""
+end
+
 local function actionRow(parent, texts, cbs)
     local f = Instance.new("Frame")
     f.Size = UDim2.new(1, 0, 1, 0); f.BackgroundTransparency = 1; f.BorderSizePixel = 0
@@ -41858,9 +42154,23 @@ function M.buildTab(tab, D)
     w:TextBox("catId", "Asset id", "paste an id or a catalog link", D.catId, function(txt, enter) if enter and txt ~= "" then M.wearText(txt) end end)
     w:Button("Wear this id", function() M.wearText(cfg.catId) end)
     w:Segment("catFit", "Fit on the body", { "Auto", "Layered", "Rigid" }, D.catFit, function() M.refit() end)
+    w:Segment("catMount", "Mount", { "Auto", "On character", "Detached" }, D.catMount, function() M.refit() end)
     w:Toggle("catKeep", "Keep after respawn", D.catKeep)
     w:Toggle("catMirror", "Mirror if blocked", D.catMirror)
     w:Label("Items are loaded straight from Roblox and handed to your own character: accessories are attached, classic clothing swaps your shirt, T-shirt or pants texture. Other players do not see them. If a worn item is not visible on your character, set Fit on the body to Rigid. The line under each item says how it was fitted.")
+
+    local mn = tab:Section("R", "On my character", nil, "ic_players")
+    local mst = mn:Label("")
+    mst.Visible = false
+    local mh = mn:Custom(24)
+    mh.ClipsDescendants = false
+    local mlist = new("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0 }, mh)
+    local mnone = label(mlist, "Nothing found on your character.", 11, "dim", F.reg, XL)
+    mnone.Size = UDim2.new(1, 0, 0, 20); mnone.Position = UDim2.fromOffset(6, 2)
+    M.mineUi = { holder = mh, list = mlist, none = mnone, status = mst }
+    mn:Button("Put everything back", function() M.mineRestoreAll() end)
+    mn:Button("Refresh the list", function() MINE.say = nil; M.mineRefresh(true) end)
+    mn:Label("Everything your avatar wears right now: accessories, shirt, pants, T-shirt and face. Take items off one by one, only you see the change. A respawn brings your whole outfit back.")
 
     local sh = tab:Section("R", "Share your look", nil, "ic_flower")
     sh:Label("Tick what to include, press Copy and send the code to anyone. To try someone's look, paste their code, check what is inside and press Wear this look. Only the look changes: binds, aim and menu settings are never touched.")
@@ -41913,6 +42223,7 @@ function M.buildTab(tab, D)
     local lks = sh:Label(M.lookStatus)
     M.onLookStatus = function(t) lks.Text = t end
     refreshWorn()
+    M.mineRefresh(true)
     relayout()
 end
 
@@ -41925,6 +42236,7 @@ function M.step(dt)
         M.search()
         return
     end
+    if M.mineUi and shown(M.mineUi.list) then M.mineRefresh(false) end
     local ch = lp.Character
     local hum = ch and ch.Parent and ch:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
@@ -41938,6 +42250,7 @@ end
 
 function M.cleanup()
     S.token = S.token + 1
+    pcall(M.mineRestoreAll)
     local list = {}
     for _, w in ipairs(M.worn) do list[#list + 1] = w end
     for _, w in ipairs(list) do dropWorn(w) end
@@ -44510,13 +44823,16 @@ local tPlayerPg = UITab("Player", "ic_players", nil)
 local tMiscPg = UITab("Misc", "ic_sliders", nil)
 
 local NEWS = {
-    { "Update 12 - everything in the side window (newest)", {
+    { "Update 13 - Catalog fixes (newest)", {
+        "Catalog items no longer flash and vanish: hats, horns and hair are fitted rigid so they always show, a missing weld is made by hand, and an item the game keeps removing is fitted from outside your character. New switches in Catalog > Wearing now: Fit on the body (Auto / Layered / Rigid) and Mount (Auto / On character / Detached). The line under every worn item says how it was fitted.",
+        "New Catalog section On my character: every accessory, shirt, pants, T-shirt and face you wear right now, each with Take off and Put back, plus Put everything back. A respawn brings your outfit back.",
+    } },
+    { "Update 12 - everything in the side window", {
         "Every function shows only its switch and key bind. Click the row: all its settings open in the window on the right.",
         "Edit layout (Visuals > Client): drag the watermark, module list, notifications, keybinds, target HUD, health bar, info overlay and keystrokes.",
         "Stretched screen with ratio presets: 1:1, 5:4, 4:3, 3:2, 16:10, 16:9, 21:9 and Custom (Visuals > Screen).",
         "Lighter interface sounds and a Tone slider (Settings > Themes).",
         "This What's new page (Misc).",
-        "Catalog fix: items that were listed as worn but not visible. Layered clothing now falls back to a rigid fit when your character has no body cage, a missing weld is made by hand, and a mesh that fails to load is reported. New switch Fit on the body (Auto / Layered / Rigid) and a status line under every worn item.",
     } },
     { "Update 11 - side window, tabs, phone buttons", {
         "Side settings window next to the menu for every function.",
