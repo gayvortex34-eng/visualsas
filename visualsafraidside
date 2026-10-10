@@ -118,7 +118,7 @@ local LOOK_KEYS = {
 
 local D = {
     master = true, preset = "Night Chill", skybox = "Gloom / Dark Night Moon", customId = "",
-    skyFade = true, skyLook = true, cycle = false, cycleTime = 30, smooth = 0.45,
+    skyFade = true, skyFill = "Auto", skyLook = true, cycle = false, cycleTime = 30, smooth = 0.45,
     skyClearOn = true, skyClear = 0.7, skyFocus = false,
     celestial = "None", celSize = 21, stars = 3000,
 
@@ -177,7 +177,7 @@ local D = {
     ffOn = false, ffPreset = "PC all-round", ffName = "", ffVal = "", stretchOn = false, stretchPreset = "4:3", stretchX = 1, stretchY = 0.75, stretchFlip = false,
     fpsOn = false, fpsCap = 144, fpsUnl = false,
 
-    accOn = false, accTarget = "Self", accScale = 1, accAnim = true, accHolo = true, accHoloAmt = 1, accOpacity = 1, accPreset = "Custom",
+    accOn = false, accTarget = "Self", accScale = 1, accAnim = true, accHolo = true, accHoloAmt = 1, accBody = 0.45, accOpacity = 1, accPreset = "Custom",
     wingFx = true, wingFxAmt = 1, accCustom = false, accRainbow = false, accH = 280, accH2 = 320, accS = 0.6, meshOn = true, meshDetail = "Normal",
     avaTarget = "Self", avaHeadless = false, avaHeadAcc = true, avaKor = false, avaKorMode = "Auto", avaKorH = 275,
     avaPick = "Pick a player", avaMethod = "Auto", avaCopyBody = true, avaKeep = false, avaName = "",
@@ -18067,6 +18067,54 @@ local function ripple(btn, pos, key)
     end)
 end
 UIX.ripple = ripple
+
+do
+    local FILE = "AfraidSide/prefs.json"
+    local data
+    local function fsOk()
+        return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function" and type(isfolder) == "function" and type(makefolder) == "function"
+    end
+    local function load()
+        if data then return data end
+        data = {}
+        local g = genv.AS_PREFS
+        if type(g) == "table" then
+            for k, v in pairs(g) do data[k] = v end
+        end
+        if fsOk() then
+            local ok, raw = pcall(function() if isfile(FILE) then return readfile(FILE) end end)
+            if ok and type(raw) == "string" and raw ~= "" then
+                local ok2, d = pcall(function() return HttpService:JSONDecode(raw) end)
+                if ok2 and type(d) == "table" then
+                    for k, v in pairs(d) do data[k] = v end
+                end
+            end
+        end
+        return data
+    end
+    local function save()
+        local copy = {}
+        for k, v in pairs(data) do copy[k] = v end
+        genv.AS_PREFS = copy
+        if fsOk() then
+            pcall(function()
+                if not isfolder("AfraidSide") then makefolder("AfraidSide") end
+                writefile(FILE, HttpService:JSONEncode(copy))
+            end)
+        end
+    end
+    UIX.PREFS = {
+        get = function(key, default)
+            local v = load()[key]
+            if v == nil then return default end
+            return v
+        end,
+        set = function(key, value)
+            load()[key] = value
+            save()
+        end,
+    }
+end
 end
 do
 
@@ -18724,6 +18772,8 @@ function UIX.selectTab(t, instant)
     currentTab = t
     local g = t.group and groups[t.group] or nil
     if g and not g.open then openOnly(g, instant) end
+    local function wideKey(x) return x and x.wide and (x.wide.w .. "x" .. x.wide.h) or "" end
+    if wideKey(old) ~= wideKey(t) and UIX.layout then UIX.layout(instant) end
     for _, x in ipairs(tabs) do
         local on = (x == t)
         if x.page.Visible ~= on then x.page.Visible = on end
@@ -18811,7 +18861,8 @@ local function searchW() return clamp(DW - sbNow - 80, 130, 340) end
 local function resW() return clamp(DW - sbNow - 20, 220, 380) end
 
 local function runSearch(q)
-    q = string.lower(q or "")
+    local LANG = UIX.LANG
+    q = (LANG and LANG.lowerCase or string.lower)(q or "")
     local toks = {}
     for w in string.gmatch(q, "%S+") do toks[#toks + 1] = w end
     local out = {}
@@ -18822,14 +18873,21 @@ local function runSearch(q)
         return out
     end
     for i, e in ipairs(searchIdx) do
+        local hay, low = e.hay, e.low
+        local hay2, low2 = nil, nil
+        if LANG then hay2, low2 = LANG.searchText(e, e.tab and e.tab.name) end
+        if hay2 then
+            hay = hay .. " " .. hay2
+            if not string.find(low, toks[1], 1, true) and string.find(low2, toks[1], 1, true) then low = low2 end
+        end
         local ok = true
         for _, tk in ipairs(toks) do
-            if not string.find(e.hay, tk, 1, true) then ok = false; break end
+            if not string.find(hay, tk, 1, true) then ok = false; break end
         end
         if ok then
             local sc = 3
-            if string.sub(e.low, 1, #toks[1]) == toks[1] then sc = 0
-            elseif string.find(e.low, toks[1], 1, true) then sc = 1
+            if string.sub(low, 1, #toks[1]) == toks[1] then sc = 0
+            elseif string.find(low, toks[1], 1, true) then sc = 1
             elseif e.kind == "ctl" then sc = 2 end
             if e.kind == "tab" then sc = sc - 0.6 elseif e.kind == "section" then sc = sc - 0.3 end
             out[#out + 1] = { e = e, sc = sc + i / 100000 }
@@ -18965,9 +19023,12 @@ local function basePos()
     return UDim2.new(0.5, winOff.X, 0.5, winOff.Y)
 end
 UIX.basePos = basePos
+local scaleTarget = 1
+UIX.layoutHooks = {}
+function UIX.pageSize() return DW - sbNow - 24, DH - TOPH - 18 end
 local function clampOff()
     local vp = viewport()
-    local s = curScale()
+    local s = scaleTarget
     local w, h = DW * s, DH * s
     local minX, maxX = w / 2 - vp.X / 2 - (w - 120), vp.X / 2 - 120 + w / 2
     local minY, maxY = h / 2 - vp.Y / 2, vp.Y / 2 - 60 + h / 2
@@ -18979,10 +19040,23 @@ function UIX.layout(snap)
     local smax = math.min((vp.X - 16) / 420, (vp.Y - 16) / 280)
     if smax > 0.3 then s = math.min(s, smax) end
     s = math.max(s, 0.4)
-    scaleObj.Scale = s
-    DW = clamp(math.floor(vp.X / s - 16), 420, 760)
-    DH = clamp(math.floor(vp.Y / s - 16), 280, 470)
-    shell.Size = UDim2.fromOffset(DW, DH)
+    local wd = currentTab and currentTab.wide
+    if wd then
+        local fit = math.min((vp.X - 16) / wd.w, (vp.Y - 16) / wd.h)
+        s = math.max(math.min(s, fit), math.min(s, 0.8))
+    end
+    DW = clamp(math.floor(vp.X / s - 16), 420, wd and wd.w or 760)
+    DH = clamp(math.floor(vp.Y / s - 16), 280, wd and wd.h or 470)
+    scaleTarget = s
+    local glide = not snap and not UIX.animating and shell.Visible
+        and (math.abs(shell.Size.X.Offset - DW) >= 1 or math.abs(shell.Size.Y.Offset - DH) >= 1 or math.abs(scaleObj.Scale - s) > 0.005)
+    if glide then
+        tw(shell, TI.med, { Size = UDim2.fromOffset(DW, DH) })
+        tw(scaleObj, TI.med, { Scale = s })
+    else
+        shell.Size = UDim2.fromOffset(DW, DH)
+        scaleObj.Scale = s
+    end
     local forced = DW < 640
     UIX.forcedShut = forced
     local col = forced or (C("sbCollapsed") == true)
@@ -19000,6 +19074,7 @@ function UIX.layout(snap)
     clampOff()
     if not UIX.animating then shell.Position = basePos() end
     if UIX.fly then UIX.fly.reposition() end
+    for _, f in ipairs(UIX.layoutHooks) do pcall(f) end
 end
 
 local winDrag
@@ -19634,7 +19709,7 @@ end
 function Sec:Toggle(key, text, default, onChange)
     local f = self:_row(32)
     local lbl = label(f, text, 12, "text", F.med, XL)
-    lbl.Size = UDim2.new(1, -62, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd
+    lbl.Size = UDim2.new(1, -62, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd; lbl.TextWrapped = true
     local TW, KS = 34, 12
     local track = new("Frame", { Size = UDim2.fromOffset(TW, 18), Position = UDim2.new(1, -(TW + 9), 0.5, -9), BorderSizePixel = 0 }, f)
     corner(track, 9); bindTheme(track, "BackgroundColor3", "off")
@@ -19849,10 +19924,10 @@ function Sec:Segment(key, text, options, default, onChange)
     local f = self:_row(32)
     local n = #options
     local chars = 0
-    for _, o in ipairs(options) do chars = chars + #tostring(o) end
+    for _, o in ipairs(options) do chars = chars + (utf8.len(tostring(o)) or #tostring(o)) end
     local bw = math.max(0.52, math.min(0.8, 0.12 + 0.026 * chars))
     local lbl = label(f, text, 12, "text", F.med, XL)
-    lbl.Size = UDim2.new(1 - bw, 0, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd
+    lbl.Size = UDim2.new(1 - bw, 0, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd; lbl.TextWrapped = true
     local box = new("Frame", { Size = UDim2.new(bw, -9, 0, 25), Position = UDim2.new(1 - bw, 0, 0.5, -12), BorderSizePixel = 0, ClipsDescendants = true }, f)
     corner(box, 7); bindTheme(box, "BackgroundColor3", "off")
     bindTheme(stroke(box, T.line, 1, 0), "Color", "line")
@@ -19878,7 +19953,8 @@ function Sec:Segment(key, text, options, default, onChange)
     reg(render)
     for i, o in ipairs(options) do
         local b = new("TextButton", { Size = UDim2.new(1 / n, 0, 1, 0), Position = UDim2.new((i - 1) / n, 0, 0, 0), BackgroundTransparency = 1, Text = o, TextSize = 11,
-            Font = F.bold, TextColor3 = T.dim, AutoButtonColor = false, BorderSizePixel = 0, TextTruncate = Enum.TextTruncate.AtEnd }, box)
+            Font = F.bold, TextColor3 = T.dim, AutoButtonColor = false, BorderSizePixel = 0, TextTruncate = Enum.TextTruncate.AtEnd, TextScaled = true }, box)
+        new("UITextSizeConstraint", { MaxTextSize = 11, MinTextSize = 7 }, b)
         btns[i] = b
         b.Activated:Connect(function() ctl:Set(o) end)
     end
@@ -19899,7 +19975,7 @@ end
 function Sec:Dropdown(key, text, options, default, multi, onChange)
     local f = self:_row(32)
     local lbl = label(f, text, 12, "text", F.med, XL)
-    lbl.Size = UDim2.new(0.36, 0, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd
+    lbl.Size = UDim2.new(0.36, 0, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd; lbl.TextWrapped = true
     local box = new("TextButton", { Size = UDim2.new(0.64, -9, 0, 25), Position = UDim2.new(0.36, 0, 0.5, -12), Text = "", AutoButtonColor = false, BorderSizePixel = 0,
         ClipsDescendants = true }, f)
     corner(box, 7); bindTheme(box, "BackgroundColor3", "off")
@@ -19964,7 +20040,7 @@ end
 function Sec:Button(text, cb, primary)
     local f = self:_row(34)
     local b = new("TextButton", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 2), Text = text, TextSize = 12, Font = F.bold, AutoButtonColor = false,
-        BorderSizePixel = 0, ClipsDescendants = true }, f)
+        BorderSizePixel = 0, ClipsDescendants = true, TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd }, f)
     corner(b, 7)
     local bst = stroke(b, T.line, 1, 0)
     bindTheme(bst, "Color", "line")
@@ -19995,7 +20071,7 @@ end
 function Sec:TextBox(key, text, placeholder, default, onSubmit)
     local f = self:_row(32)
     local lbl = label(f, text, 12, "text", F.med, XL)
-    lbl.Size = UDim2.new(0.3, 0, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd
+    lbl.Size = UDim2.new(0.3, 0, 1, 0); lbl.Position = UDim2.fromOffset(9, 0); lbl.TextTruncate = Enum.TextTruncate.AtEnd; lbl.TextWrapped = true
     local tb = new("TextBox", {
         Size = UDim2.new(0.7, -9, 0, 25), Position = UDim2.new(0.3, 0, 0.5, -12), Text = default or "", PlaceholderText = placeholder or "", Font = F.reg, TextSize = 12,
         ClearTextOnFocus = false, TextXAlignment = XL, BorderSizePixel = 0,
@@ -22973,6 +23049,1970 @@ end
 
 SFX.start()
 end
+do
+local LANG = {}
+UIX.LANG = LANG
+
+LANG.languages = { { code = "en", name = "English" }, { code = "ru", name = "Русский" } }
+LANG.names = { "English", "Русский" }
+
+local WORDS, RULES, BACK = {}, {}, {}
+LANG.words, LANG.rules = WORDS, RULES
+
+local current = "en"
+local active = false
+local cache, cacheCount = {}, 0
+local tracked = setmetatable({}, { __mode = "k" })
+local roots, rootLinks = {}, {}
+local listeners = {}
+local walking = 0
+
+function LANG.word(english, russian)
+    if cacheCount > 0 then cache, cacheCount = {}, 0 end
+    if WORDS[english] == nil then WORDS[english] = russian end
+    if BACK[russian] == nil then BACK[russian] = english end
+end
+
+function LANG.rule(pattern, template)
+    if cacheCount > 0 then cache, cacheCount = {}, 0 end
+    RULES[#RULES + 1] = { pattern, template }
+end
+
+local translateText
+
+local function fillTemplate(template, caught)
+    return (string.gsub(template, "{(t?)(%d)}", function(mode, digit)
+        local piece = caught[tonumber(digit)] or ""
+        if mode == "t" then return translateText(piece) end
+        return piece
+    end))
+end
+
+local function byRules(text)
+    for i = 1, #RULES do
+        local rule = RULES[i]
+        local caught = { string.match(text, rule[1]) }
+        if caught[1] ~= nil then
+            if type(rule[2]) == "function" then
+                local made = rule[2](caught, translateText)
+                if type(made) == "string" then return made end
+            else
+                return fillTemplate(rule[2], caught)
+            end
+        end
+    end
+    return nil
+end
+
+function LANG.plural(count, one, few, many)
+    local n = math.abs(math.floor(tonumber(count) or 0))
+    local last, last2 = n % 10, n % 100
+    if last == 1 and last2 ~= 11 then return one end
+    if last >= 2 and last <= 4 and (last2 < 12 or last2 > 14) then return few end
+    return many
+end
+
+local function splitBy(text, separator)
+    local out, from = {}, 1
+    while true do
+        local a, b = string.find(text, separator, from, true)
+        if not a then
+            out[#out + 1] = string.sub(text, from)
+            break
+        end
+        out[#out + 1] = string.sub(text, from, a - 1)
+        from = b + 1
+    end
+    return out
+end
+
+local function byParts(text, separator, strict)
+    if not string.find(text, separator, 1, true) then return nil end
+    local parts = splitBy(text, separator)
+    local anyChanged, allKnown = false, true
+    for i, part in ipairs(parts) do
+        local done = translateText(part)
+        if done ~= part then
+            anyChanged = true
+        elseif part ~= "" and not string.match(part, "^[%d%p%s]*$") then
+            allKnown = false
+        end
+        parts[i] = done
+    end
+    if anyChanged and (allKnown or not strict) then return table.concat(parts, separator) end
+    return nil
+end
+
+translateText = function(text)
+    if type(text) ~= "string" or text == "" then return text end
+    if not string.find(text, "%a") then return text end
+    local direct = WORDS[text]
+    if direct then return direct end
+    local remembered = cache[text]
+    if remembered then return remembered end
+    local out = text
+    local lead, core, tail = string.match(text, "^(%s*)(.-)(%s*)$")
+    if lead ~= "" or tail ~= "" then
+        if core ~= "" then
+            local done = translateText(core)
+            if done ~= core then out = lead .. done .. tail end
+        end
+    else
+        out = byRules(text) or byParts(text, "\n", false) or byParts(text, "  |  ", false) or byParts(text, " | ", false) or byParts(text, " / ", true) or text
+    end
+    if cacheCount > 3000 then cache, cacheCount = {}, 0 end
+    cache[text] = out
+    cacheCount = cacheCount + 1
+    return out
+end
+
+function LANG.translate(text)
+    if current == "en" then return text end
+    return translateText(text)
+end
+LANG.t = LANG.translate
+
+function LANG.russian(text)
+    return translateText(text)
+end
+
+function LANG.current() return current end
+function LANG.isRussian() return current == "ru" end
+
+function LANG.lowerCase(text)
+    text = string.lower(text)
+    text = string.gsub(text, "\208([\144-\175])", function(second)
+        local b = string.byte(second)
+        if b <= 159 then return "\208" .. string.char(b + 32) end
+        return "\209" .. string.char(b - 32)
+    end)
+    text = string.gsub(text, "\208\129", "\209\145")
+    return text
+end
+
+function LANG.searchText(entry, tabName)
+    if not entry.russianHay then
+        entry.russianHay = LANG.lowerCase(translateText(entry.text or "") .. " " .. translateText(entry.sec or "") .. " " .. translateText(tabName or ""))
+        entry.russianLow = LANG.lowerCase(translateText(entry.text or ""))
+    end
+    return entry.russianHay, entry.russianLow
+end
+
+local function propertyOf(inst)
+    local class = inst.ClassName
+    if class == "TextLabel" or class == "TextButton" then return "Text" end
+    if class == "TextBox" then return "PlaceholderText" end
+    return nil
+end
+
+local function paint(inst, rec)
+    local want = (current == "en") and rec.original or translateText(rec.original)
+    rec.shown = want
+    if inst[rec.prop] ~= want then pcall(function() inst[rec.prop] = want end) end
+end
+
+local function follow(inst)
+    if tracked[inst] then return end
+    local prop = propertyOf(inst)
+    if not prop then return end
+    local now = inst[prop]
+    if type(now) ~= "string" then return end
+    local rec = { prop = prop, original = BACK[now] or now, shown = now }
+    tracked[inst] = rec
+    rec.link = inst:GetPropertyChangedSignal(prop):Connect(function()
+        local value = inst[prop]
+        if value == rec.shown then return end
+        rec.original = BACK[value] or value
+        paint(inst, rec)
+    end)
+    paint(inst, rec)
+end
+
+local function followAllBelow(root)
+    local list = root:GetDescendants()
+    walking = walking + 1
+    task.spawn(function()
+        for i = 1, #list do
+            local inst = list[i]
+            if inst.Parent then follow(inst) end
+            if i % 2500 == 0 then task.wait() end
+        end
+        walking = walking - 1
+    end)
+end
+
+local function hook(root)
+    if rootLinks[root] then return end
+    rootLinks[root] = root.DescendantAdded:Connect(follow)
+    followAllBelow(root)
+end
+
+local function activate()
+    if active then return end
+    active = true
+    for _, root in ipairs(roots) do hook(root) end
+end
+
+local function deactivate()
+    if not active then return end
+    active = false
+    for root, link in pairs(rootLinks) do
+        link:Disconnect()
+        rootLinks[root] = nil
+    end
+    local list = {}
+    for inst, rec in pairs(tracked) do list[#list + 1] = { inst, rec } end
+    for _, pair in ipairs(list) do
+        local inst, rec = pair[1], pair[2]
+        if rec.link then rec.link:Disconnect() end
+        rec.shown = rec.original
+        if inst.Parent and inst[rec.prop] ~= rec.original then pcall(function() inst[rec.prop] = rec.original end) end
+        tracked[inst] = nil
+    end
+end
+
+function LANG.watch(root)
+    if not root then return end
+    for i = #roots, 1, -1 do
+        local known = roots[i]
+        if known == root then return end
+        if known ~= UIX.gui and not known.Parent then
+            local link = rootLinks[known]
+            if link then link:Disconnect(); rootLinks[known] = nil end
+            table.remove(roots, i)
+        end
+    end
+    roots[#roots + 1] = root
+    if active then hook(root) end
+end
+
+function LANG.apply(inst)
+    if not active then return end
+    follow(inst)
+end
+
+function LANG.onChange(fn)
+    listeners[#listeners + 1] = fn
+end
+
+function LANG.busy() return walking > 0 end
+
+function LANG.trackedCount()
+    local n = 0
+    for _ in pairs(tracked) do n = n + 1 end
+    return n
+end
+
+function LANG.set(code, silent)
+    local known = false
+    for _, entry in ipairs(LANG.languages) do
+        if entry.code == code then known = true end
+    end
+    if not known then code = "en" end
+    local changed = (code ~= current)
+    current = code
+    if code == "en" then
+        deactivate()
+    elseif not active then
+        activate()
+    else
+        local list = {}
+        for inst, rec in pairs(tracked) do list[#list + 1] = { inst, rec } end
+        for _, pair in ipairs(list) do
+            if pair[1].Parent then paint(pair[1], pair[2]) end
+        end
+    end
+    if not silent and UIX.PREFS then UIX.PREFS.set("lang", code) end
+    if changed then
+        for _, fn in ipairs(listeners) do
+            local ok, err = pcall(fn, code)
+            if not ok and report then report("language", err) end
+        end
+    end
+    return code
+end
+
+function LANG.nameOf(code)
+    for _, entry in ipairs(LANG.languages) do
+        if entry.code == code then return entry.name end
+    end
+    return "English"
+end
+function LANG.codeOf(name)
+    for _, entry in ipairs(LANG.languages) do
+        if entry.name == name then return entry.code end
+    end
+    return "en"
+end
+
+function LANG.start()
+    LANG.watch(UIX.gui)
+    LANG.set(UIX.PREFS and UIX.PREFS.get("lang", "en") or "en", true)
+end
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[Combat]], [[Бой]])
+d([[Visuals]], [[Визуал]])
+d([[Fake visuals]], [[Фейк-визуал]])
+d([[ESP & HUD]], [[ESP и HUD]])
+d([[Crosshair]], [[Прицел]])
+d([[Client]], [[Клиент]])
+d([[Cursor]], [[Курсор]])
+d([[Character]], [[Персонаж]])
+d([[Avatar]], [[Аватар]])
+d([[Accessories]], [[Аксессуары]])
+d([[Cosmetics]], [[Косметика]])
+d([[Catalog]], [[Каталог]])
+d([[Auras & FX]], [[Ауры и эффекты]])
+d([[Aura]], [[Аура]])
+d([[Seals]], [[Печати]])
+d([[Trail]], [[Шлейф]])
+d([[Kill FX]], [[Эффекты убийства]])
+d([[World]], [[Мир]])
+d([[Sky]], [[Небо]])
+d([[Post FX]], [[Пост-эффекты]])
+d([[Particles]], [[Частицы]])
+d([[Constellations]], [[Созвездия]])
+d([[Screen]], [[Экран]])
+d([[Filters]], [[Фильтры]])
+d([[Move]], [[Движение]])
+d([[Movement]], [[Передвижение]])
+d([[Misc]], [[Разное]])
+d([[Info]], [[Информация]])
+d([[What's new]], [[Что нового]])
+d([[Games]], [[Игры]])
+d([[Your functions]], [[Мои функции]])
+d([[Player]], [[Игрок]])
+d([[Settings]], [[Настройки]])
+d([[Binds]], [[Клавиши (бинды)]])
+d([[Optimize]], [[Оптимизация]])
+d([[Themes]], [[Темы]])
+d([[Config]], [[Конфиг]])
+d([[Search]], [[Поиск]])
+d([[search any function...]], [[поиск любой функции...]])
+d([[No function matches]], [[Ничего не найдено]])
+d([[page]], [[страница]])
+d([[Nothing here yet. This page is reserved for your own functions.]], [[Здесь пока пусто. Эта страница зарезервирована для ваших собственных функций.]])
+
+r([[^Tier (%d+)$]], [[Уровень {1}]])
+r([[^tier (%d+)$]], [[уровень {1}]])
+d([[idle]], [[простой]])
+r([[^fps (%d+)$]], [[FPS {1}]])
+r([[^emitters (%d+)$]], [[эмиттеров {1}]])
+r([[^skies (%d+)$]], [[небес {1}]])
+r([[^Auto quality: tier (%d+) %((%d+) fps%)$]], [[Авто-качество: уровень {1} ({2} FPS)]])
+
+d([[Aim assist]], [[Помощь в наведении]])
+d([[Enabled]], [[Включено]])
+d([[Back dash cancel]], [[Отмена рывка назад (BDC)]])
+d([[Auto BDC]], [[Авто BDC]])
+d([[Silent aim]], [[Silent aim (скрытое наведение)]])
+d([[Look]], [[Внешний вид]])
+d([[FOV circle]], [[Круг FOV]])
+d([[Line to the target]], [[Линия к цели]])
+d([[Target tag (name, hp, distance)]], [[Метка цели (имя, HP, расстояние)]])
+d([[Status]], [[Состояние]])
+d([[Silent aim is off.]], [[Silent aim выключен.]])
+d([[Hook again]], [[Перехватить заново]])
+d([[Works only in Da Hood. If the game updates and the aim stops, the names live in the DH table at the top of this module.]], [[Работает только в Da Hood. Если игра обновилась и наведение перестало работать, нужные имена лежат в таблице DH в начале этого модуля.]])
+
+d([[Flight]], [[Полёт]])
+d([[Fly]], [[Полёт (Fly)]])
+d([[Speed]], [[Скорость]])
+d([[Speed boost]], [[Ускорение]])
+d([[Bunny hop]], [[Банихоп (прыжки с разгоном)]])
+d([[Jump]], [[Прыжок]])
+d([[Jump power]], [[Сила прыжка]])
+d([[Infinite jump]], [[Бесконечный прыжок]])
+d([[Dash]], [[Рывок]])
+d([[Glide]], [[Планирование]])
+d([[Wall climb]], [[Лазание по стенам]])
+d([[Soft landing (no fall damage)]], [[Мягкая посадка (без урона от падения)]])
+d([[Collision and physics]], [[Столкновения и физика]])
+d([[Noclip]], [[Проход сквозь стены (Noclip)]])
+d([[Freeze in place]], [[Заморозить на месте]])
+d([[Custom gravity]], [[Своя гравитация]])
+d([[Spin]], [[Вращение]])
+d([[Air walk platform]], [[Платформа в воздухе]])
+d([[Teleport]], [[Телепорт]])
+d([[Click teleport]], [[Телепорт по клику]])
+d([[Nearest]], [[Ближайший]])
+d([[Teleport to player]], [[Телепорт к игроку]])
+d([[Refresh player list]], [[Обновить список игроков]])
+d([[Follow player]], [[Следовать за игроком]])
+d([[Spectate player]], [[Наблюдать за игроком]])
+d([[Saved spot]], [[Сохранённая точка]])
+d([[Spot 1]], [[Точка 1]])
+d([[Save current position]], [[Сохранить текущую позицию]])
+d([[Go to saved spot]], [[Телепорт в сохранённую точку]])
+d([[Go to spawn]], [[Телепорт на спавн]])
+d([[Safety and display]], [[Безопасность и показ]])
+d([[Anti-void]], [[Анти-бездна (не упасть в пустоту)]])
+d([[Status pill]], [[Плашка состояния]])
+d([[Screen buttons exist only after you create them: right-click a switch (touch: hold its name), open Button, or pick one below.]], [[Кнопки на экране появляются, только когда вы их создадите: нажмите правой кнопкой мыши на выключатель (на телефоне — удерживайте его название), откройте «Кнопка» или выберите ниже.]])
+d([[Fly up button]], [[Кнопка «Вверх» (полёт)]])
+d([[Fly down button]], [[Кнопка «Вниз» (полёт)]])
+d([[Boost button]], [[Кнопка ускорения]])
+d([[Slow button]], [[Кнопка замедления]])
+d([[Dash button]], [[Кнопка рывка]])
+d([[Turn everything off]], [[Выключить всё]])
+d([[Decoy body]], [[Двойник (фейк-тело)]])
+
+d([[Player ESP]], [[ESP игроков (подсветка)]])
+d([[Chams (glow through walls)]], [[Чамсы (свечение сквозь стены)]])
+d([[Highlight nearest players]], [[Подсвечивать ближайших игроков]])
+d([[Skeleton and head]], [[Скелет и голова]])
+d([[Skeleton]], [[Скелет]])
+d([[Tracers and arrows]], [[Линии и стрелки]])
+d([[Tracer lines]], [[Линии к игрокам]])
+d([[Off-screen arrows]], [[Стрелки за краем экрана]])
+d([[Radar]], [[Радар]])
+d([[Radar mini-map]], [[Радар-миникарта]])
+
+d([[Body]], [[Тело]])
+d([[Apply to]], [[Применить к]])
+d([[Self]], [[Мне]])
+d([[Others]], [[Другим]])
+d([[All]], [[Всем]])
+d([[Headless]], [[Без головы (Headless)]])
+d([[Korblox right leg]], [[Правая нога Korblox]])
+d([[Copy someone's look]], [[Скопировать чужой облик]])
+d([[Pick a player]], [[Выберите игрока]])
+d([[Method]], [[Способ]])
+d([[Auto]], [[Авто]])
+d([[Clone]], [[Клон]])
+d([[Description]], [[Описание аватара]])
+d([[Copy skin colour / body meshes]], [[Копировать цвет кожи и формы тела]])
+d([[Keep after respawn]], [[Сохранять после возрождения]])
+d([[Copy look]], [[Скопировать облик]])
+d([[Restore my look]], [[Вернуть мой облик]])
+d([[Username / id]], [[Ник / ID]])
+d([[any Roblox user]], [[любой пользователь Roblox]])
+d([[Copy by username / id]], [[Скопировать по нику / ID]])
+d([[Your own look]], [[Ваш собственный облик]])
+d([[Clone copies the replicated clothes, hats, face and colours straight from their character. Description loads the account avatar (works for users who are not in the server). Only you see the result.]], [[«Клон» копирует одежду, шляпы, лицо и цвета прямо с персонажа игрока. «Описание аватара» загружает аватар аккаунта (работает и для тех, кого нет на сервере). Результат видите только вы.]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[3D accessories]], [[3D-аксессуары]])
+d([[Character preview]], [[Предпросмотр персонажа]])
+d([[Drag to rotate]], [[Тяните, чтобы повернуть]])
+d([[Pick models in the Accessories tab]], [[Выберите модели на вкладке «Аксессуары»]])
+d([[Show]], [[Показать]])
+d([[My selection]], [[Мой выбор]])
+d([[View]], [[Вид]])
+d([[Front]], [[Спереди]])
+d([[Back]], [[Сзади]])
+d([[Side]], [[Сбоку]])
+d([[Zoom]], [[Масштаб]])
+d([[Running pose (wings flap, cape sways)]], [[Поза бега (крылья машут, плащ колышется)]])
+d([[Equip the model shown above]], [[Надеть модель, показанную выше]])
+d([[Take everything off]], [[Снять всё]])
+d([[Shows your own avatar. Choose what to wear in the Accessories tab, or pick one model in Show to look at it alone. Drag the picture to turn it.]], [[Здесь виден ваш аватар. Выберите, что надеть, на вкладке «Аксессуары», или выберите одну модель в пункте «Показать», чтобы рассмотреть её отдельно. Тяните картинку, чтобы повернуть её.]])
+
+d([[Catalog filters]], [[Фильтры каталога]])
+d([[hair, hat, wings, hoodie, jeans ...]], [[волосы, шляпа, крылья, худи, джинсы ...]])
+d([[Type]], [[Тип]])
+d([[All accessories]], [[Все аксессуары]])
+d([[Free items only]], [[Только бесплатные]])
+d([[Search: hair, hat, wings, hoodie, jeans ...]], [[Поиск: волосы, шляпа, крылья, худи, джинсы ...]])
+d([[Clothing]], [[Одежда]])
+d([[Free only]], [[Бесплатные]])
+d([[Sort]], [[Порядок]])
+d([[Bestselling]], [[Топ продаж]])
+d([[Hair]], [[Волосы]])
+d([[Hats]], [[Шляпы]])
+d([[Face]], [[Лицо]])
+d([[Neck]], [[Шея]])
+d([[Shoulder]], [[Плечи]])
+d([[Waist]], [[Пояс]])
+d([[T-Shirts]], [[Футболки]])
+d([[Shirts]], [[Рубашки]])
+d([[Pants]], [[Штаны]])
+d([[Press Search to browse the catalog]], [[Нажмите «Поиск», чтобы открыть каталог]])
+d([[Press Search to browse the catalog.]], [[Нажмите «Поиск», чтобы открыть каталог.]])
+d([[Your character]], [[Ваш персонаж]])
+r([[^(%d+) from the catalog  |  (%d+) of yours$]], [[{1} из каталога  |  {2} ваших]])
+d([[Wearing now]], [[Надето сейчас]])
+d([[Asset id]], [[ID предмета]])
+d([[paste an id or a catalog link]], [[вставьте ID или ссылку из каталога]])
+d([[Wear this id]], [[Надеть этот ID]])
+d([[On my character]], [[На моём персонаже]])
+d([[Nothing found on your character.]], [[На вашем персонаже ничего не найдено.]])
+d([[Put everything back]], [[Вернуть всё обратно]])
+d([[Refresh the list]], [[Обновить список]])
+d([[Everything your avatar wears right now: accessories, shirt, pants, T-shirt and face. Take items off one by one or all at once (this also takes off the catalog items you tried on). Only you see the change. A respawn brings your whole outfit back.]], [[Всё, что сейчас надето на вашем аватаре: аксессуары, рубашка, штаны, футболка и лицо. Снимайте предметы по одному или все сразу (это снимает и примеренные предметы из каталога). Изменение видите только вы. После возрождения весь наряд вернётся.]])
+d([[Try-on options]], [[Параметры примерки]])
+d([[Fit on the body]], [[Посадка на тело]])
+d([[Layered]], [[Многослойная]])
+d([[Rigid]], [[Жёсткая]])
+d([[Mount]], [[Крепление]])
+d([[On character]], [[На персонаже]])
+d([[Detached]], [[Отдельно от персонажа]])
+d([[Mirror if blocked]], [[Зеркало, если мешает]])
+d([[Items are loaded straight from Roblox and handed to your own character: accessories are attached, classic clothing swaps your shirt, T-shirt or pants texture. Other players do not see them. If a worn item is not visible on your character, set Fit on the body to Rigid. The line under each item says how it was fitted.]], [[Предметы загружаются прямо из Roblox и выдаются вашему персонажу: аксессуары прикрепляются, классическая одежда заменяет текстуру рубашки, футболки или штанов. Другие игроки их не видят. Если надетый предмет не виден на персонаже, поставьте «Посадка на тело» в «Жёсткая». Строка под каждым предметом сообщает, как он был надет.]])
+d([[Share your look]], [[Поделиться образом]])
+d([[Tick what to include, press Copy and send the code to anyone. To try someone's look, paste their code, check what is inside and press Wear this look. Only the look changes: binds, aim and menu settings are never touched.]], [[Отметьте, что включить, нажмите «Копировать» и отправьте код кому угодно. Чтобы примерить чужой образ, вставьте его код, проверьте содержимое и нажмите «Надеть этот образ». Меняется только внешний вид: бинды, наведение и настройки меню не затрагиваются.]])
+d([[Catalog items you wear]], [[Предметы из каталога на вас]])
+d([[3D accessories (wings, halos ...)]], [[3D-аксессуары (крылья, нимбы ...)]])
+d([[Skins, aura, trail, kill effect]], [[Скины, аура, шлейф, эффект убийства]])
+d([[Korblox leg / headless]], [[Нога Korblox / без головы]])
+d([[World and sky]], [[Мир и небо]])
+d([[Copy my look code]], [[Копировать код моего образа]])
+d([[Paste code]], [[Код]])
+d([[paste a look code here]], [[вставьте сюда код образа]])
+d([[Wear this look]], [[Надеть этот образ]])
+d([[Undo (my previous look)]], [[Отменить (мой прошлый образ)]])
+d([[Copy your look to share it, or paste a code from someone else]], [[Скопируйте свой образ, чтобы поделиться им, или вставьте чужой код]])
+
+r([[^(%d+) items  |  page (%d+)$]], [[Предметов: {1}  |  страница {2}]])
+r([[^(%d+) R%$$]], [[{1} R$]])
+r([[^(%d+) R%$  %(limited%)$]], [[{1} R$  (лимитка)]])
+d([[Free]], [[Бесплатно]])
+d([[Scroll down for more]], [[Прокрутите вниз, чтобы увидеть ещё]])
+d([[Nothing found - try another word or type.]], [[Ничего не найдено — попробуйте другое слово или тип.]])
+
+d([[Hat]], [[Шляпа]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[Cosmetics (master switch)]], [[Косметика (главный выключатель)]])
+d([[Skin / material]], [[Скин / материал]])
+d([[Body light]], [[Свечение тела]])
+d([[Outline glow]], [[Свечение контура]])
+d([[Glowing eyes]], [[Светящиеся глаза]])
+d([[Orbiting objects]], [[Вращающиеся объекты]])
+d([[Orbit]], [[Орбита]])
+d([[Energy]], [[Энергия]])
+d([[Lightning aura]], [[Аура молний]])
+d([[Body flames]], [[Пламя на теле]])
+d([[Back sigil]], [[Знак за спиной]])
+d([[Bubble shield]], [[Пузырь-щит]])
+d([[After-images (while sprinting)]], [[Послеобразы (при беге)]])
+d([[Footprints]], [[Следы ног]])
+d([[Ground circle and rings]], [[Круг и кольца на земле]])
+d([[Lie flat on the surface]], [[Ложиться на поверхность]])
+d([[Circle on jump / landing]], [[Круг при прыжке и приземлении]])
+d([[Kill effect]], [[Эффект убийства]])
+d([[On death]], [[При смерти]])
+
+d([[World visuals]], [[Визуал мира]])
+d([[Time and light]], [[Время и свет]])
+d([[Control time of day]], [[Управлять временем суток]])
+d([[Brightness]], [[Яркость]])
+d([[Exposure]], [[Экспозиция]])
+d([[Shadows]], [[Тени]])
+d([[Fullbright]], [[Полная яркость (Fullbright)]])
+d([[Ambient light]], [[Окружающий свет]])
+d([[Custom ambient]], [[Свой окружающий свет]])
+d([[Surface colour shift]], [[Сдвиг цвета поверхностей]])
+d([[Fog]], [[Туман]])
+d([[Distance fog]], [[Туман вдали]])
+d([[Fog hides the game's own Atmosphere while it is on (the engine ignores fog when an Atmosphere exists).]], [[Пока туман включён, он скрывает собственную атмосферу игры (движок игнорирует туман, если есть атмосфера).]])
+d([[Sky clarity]], [[Чёткость неба]])
+d([[Keep the sky visible]], [[Не заслонять небо]])
+d([[Skybox]], [[Скайбокс]])
+d([[All 6 sky pictures are there.]], [[Все 6 картинок неба на месте.]])
+d([[Missing sky pictures]], [[Пустые стороны неба]])
+d([[Some skies come without one of the six pictures; the engine then shows its own default sky on that side and the sky looks like a cube. Auto fills the gap with black (dark skies) or a copy of a side picture (day skies).]], [[У некоторых небес нет одной из шести картинок: тогда движок показывает с этой стороны своё стандартное небо, и небо выглядит как куб. «Авто» закрывает пробел чёрным цветом (тёмные небеса) или копией боковой картинки (дневные небеса).]])
+d([[Dark dip between skies]], [[Затемнение между небесами]])
+d([[Cycle skies]], [[Менять небеса по кругу]])
+d([[Random sky]], [[Случайное небо]])
+d([[Hide this sky]], [[Скрыть это небо]])
+d([[Show hidden skies]], [[Показать скрытые небеса]])
+d([[Dark fantasy skies are listed first: Berserk / Hell / Gloom / Mystic. A sky you hide stays hidden next time too; it is not part of any config.]], [[Тёмные фэнтези-небеса идут первыми: Berserk / Hell / Gloom / Mystic. Скрытое небо остаётся скрытым и в следующий раз; оно не входит ни в один конфиг.]])
+d([[Custom sky]], [[Своё небо]])
+d([[Asset ID]], [[ID ассета]])
+d([[Sky model id]], [[ID модели неба]])
+d([[Load sky ID]], [[Загрузить небо по ID]])
+d([[Check all skies]], [[Проверить все небеса]])
+d([[Sun, moon, stars]], [[Солнце, луна, звёзды]])
+d([[Bodies]], [[Небесные тела]])
+d([[None]], [[Нет]])
+d([[Sun]], [[Солнце]])
+d([[Moon]], [[Луна]])
+d([[Both]], [[Оба]])
+d([[Body size]], [[Размер тел]])
+d([[Stars]], [[Звёзды]])
+d([[Bloom]], [[Свечение (Bloom)]])
+d([[Sun rays]], [[Лучи солнца]])
+d([[Blur]], [[Размытие]])
+d([[Raise graphics quality for post-fx]], [[Поднять качество графики для пост-эффектов]])
+d([[Bloom, depth of field and sun rays are skipped by Roblox at low graphics quality.]], [[Свечение, глубину резкости и лучи солнца Roblox отключает при низком качестве графики.]])
+d([[Color grade]], [[Цветокоррекция]])
+d([[Color correction]], [[Цветовая коррекция]])
+d([[Atmosphere]], [[Атмосфера]])
+d([[Clouds and depth]], [[Облака и глубина]])
+d([[Clouds]], [[Облака]])
+d([[Depth of field]], [[Глубина резкости]])
+d([[All layers]], [[Все слои]])
+d([[Wind]], [[Ветер]])
+d([[Glow]], [[Свечение]])
+d([[Area size]], [[Размер области]])
+d([[Hide rain / snow under a roof]], [[Скрывать дождь и снег под крышей]])
+d([[Storm: lightning bolts]], [[Гроза: молнии]])
+d([[Storm: screen flash]], [[Гроза: вспышки на экране]])
+d([[Layers follow your camera, so they never run out. Each layer is its own set of emitters.]], [[Слои следуют за камерой, поэтому никогда не кончаются. Каждый слой — отдельный набор излучателей.]])
+d([[Layer 1]], [[Слой 1]])
+d([[Layer 2]], [[Слой 2]])
+d([[Layer 3]], [[Слой 3]])
+d([[Layer 4]], [[Слой 4]])
+d([[Quick scenes]], [[Быстрые сцены]])
+d([[Snowy night]], [[Снежная ночь]])
+d([[Sakura dream]], [[Сон сакуры]])
+d([[Starfall]], [[Звездопад]])
+d([[Enchanted forest]], [[Зачарованный лес]])
+d([[Blood moon]], [[Кровавая луна]])
+d([[Galaxy dust]], [[Галактическая пыль]])
+d([[Holy light]], [[Священный свет]])
+d([[Blizzard]], [[Метель]])
+d([[Clear all layers]], [[Очистить все слои]])
+
+d([[All seals]], [[Все печати]])
+d([[Cycle through the diagrams]], [[Менять диаграммы по кругу]])
+d([[Ten hand-drawn diagrams: pentagram, hexagram, flower of life, astrolabe, zodiac, octagram, eclipse, rune wheel, orbits, Metatron. Extra layers use other diagrams and spin the other way.]], [[Десять нарисованных вручную диаграмм: пентаграмма, гексаграмма, цветок жизни, астролябия, зодиак, октаграмма, затмение, колесо рун, орбиты, куб Метатрона. Дополнительные слои берут другие диаграммы и вращаются в обратную сторону.]])
+d([[Sky circle]], [[Круг в небе]])
+d([[Ground circle]], [[Круг на земле]])
+d([[Horizon circle]], [[Круг на горизонте]])
+d([[Constellations in the sky]], [[Созвездия в небе]])
+
+d([[Stretched resolution]], [[Растянутое разрешение]])
+d([[Stretch the picture]], [[Растянуть картинку]])
+d([[Camera]], [[Камера]])
+d([[Field of view]], [[Поле зрения]])
+d([[Cinematic bars]], [[Кинематографические полосы]])
+d([[Motion blur]], [[Размытие в движении]])
+d([[Hide Roblox core UI]], [[Скрыть интерфейс Roblox]])
+d([[Vignette]], [[Виньетка]])
+d([[Hold-to-zoom]], [[Приближение по удержанию]])
+d([[Screen filter]], [[Экранный фильтр]])
+d([[Filter]], [[Фильтр]])
+d([[Speed lines]], [[Линии скорости]])
+d([[Speed lines (sprint / fall)]], [[Линии скорости (бег и падение)]])
+d([[Film]], [[Плёнка]])
+d([[Film grain]], [[Зерно плёнки]])
+d([[Scanlines]], [[Строчная развёртка]])
+
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[Custom crosshair]], [[Свой прицел]])
+d([[Hurt vignette]], [[Виньетка при уроне]])
+d([[Red flash when hurt + low-HP pulse]], [[Красная вспышка при уроне и пульс при низком HP]])
+d([[Hit marker]], [[Маркер попадания]])
+d([[Hit marker (damage near crosshair)]], [[Маркер попадания (урон рядом с прицелом)]])
+d([[Hit and kill sounds]], [[Звуки попадания и убийства]])
+d([[Sound on a hit]], [[Звук при попадании]])
+d([[Sound on a kill]], [[Звук при убийстве]])
+d([[Damage numbers]], [[Числа урона]])
+d([[Floating damage numbers]], [[Всплывающие числа урона]])
+d([[Info overlay]], [[Информационная панель]])
+d([[Keystrokes]], [[Нажатия клавиш]])
+d([[Keystrokes + CPS]], [[Нажатия клавиш + CPS]])
+d([[Click effects and trail]], [[Эффекты кликов и след]])
+d([[Cursor FX]], [[Эффекты курсора]])
+d([[Module list]], [[Список модулей]])
+d([[Panels]], [[Панели]])
+d([[Watermark (name, fps, ping)]], [[Водяной знак (имя, FPS, пинг)]])
+d([[Notification when a module switches]], [[Уведомление при переключении модуля]])
+d([[Health bar]], [[Полоска здоровья]])
+d([[Layout]], [[Расположение]])
+d([[Edit layout (drag the panels)]], [[Править расположение (тяните панели)]])
+d([[Reset layout]], [[Сбросить расположение]])
+d([[Snap to edges and centre]], [[Привязка к краям и центру]])
+r([[^(%d+) panels on  |  (%d+) moved$]], [[Включено панелей: {1}  |  сдвинуто: {2}]])
+d([[Moves the watermark, module list, notifications, keybinds, target HUD, health bar, info overlay and keystrokes. The menu hides while you drag.]], [[Двигает водяной знак, список модулей, уведомления, список клавиш, панель цели, полоску здоровья, информационную панель и нажатия клавиш. Пока вы тянете, меню скрывается.]])
+d([[Keybinds]], [[Список клавиш]])
+d([[Keybinds panel]], [[Панель клавиш]])
+d([[Target HUD]], [[Панель цели]])
+
+d([[Adaptive quality]], [[Адаптивное качество]])
+d([[Auto lower effects when FPS drops]], [[Автоматически снижать эффекты, когда падает FPS]])
+d([[Game optimizer]], [[Оптимизатор игры]])
+d([[Graphics quality]], [[Качество графики]])
+d([[Game]], [[Игра]])
+d([[Low]], [[Низкое]])
+d([[Medium]], [[Среднее]])
+d([[High]], [[Высокое]])
+d([[Disable shadows]], [[Отключить тени]])
+d([[Disable game post effects]], [[Отключить пост-эффекты игры]])
+d([[Disable game particles]], [[Отключить частицы игры]])
+d([[Flatten materials]], [[Упростить материалы]])
+d([[Calm water / no grass]], [[Спокойная вода / без травы]])
+
+d([[FFlag presets]], [[Наборы FFlag]])
+d([[Sets engine flags from inside the game. Roblox honours only a short list of flags and many are read once at start-up, so rejoin after applying. Nothing here changes hitboxes, dash speed or the ping of a server.]], [[Задаёт флаги движка прямо из игры. Roblox учитывает лишь короткий список флагов, а многие читаются один раз при запуске, поэтому после применения перезайдите в игру. Ничего из этого не меняет хитбоксы, скорость рывка или пинг сервера.]])
+d([[Preset]], [[Набор]])
+d([[PC all-round]], [[ПК: универсальный]])
+d([[Apply preset]], [[Применить набор]])
+d([[Restore the original values]], [[Вернуть исходные значения]])
+d([[Copy the preset as ClientAppSettings.json]], [[Скопировать набор как ClientAppSettings.json]])
+d([[Apply the preset automatically at start]], [[Применять набор автоматически при запуске]])
+d([[setfflag: not available in this executor (use the copy button and a ClientAppSettings.json file)]], [[setfflag недоступен в этом эксплойте (используйте кнопку копирования и файл ClientAppSettings.json)]])
+d([[Single flag]], [[Отдельный флаг]])
+d([[Flag]], [[Флаг]])
+d([[e.g. DFIntTaskSchedulerTargetFps]], [[например, DFIntTaskSchedulerTargetFps]])
+d([[Value]], [[Значение]])
+d([[e.g. 9999 or True]], [[например, 9999 или True]])
+d([[Set flag]], [[Задать флаг]])
+d([[Read flag]], [[Прочитать флаг]])
+d([[Frame rate]], [[Частота кадров]])
+d([[Frame rate cap]], [[Ограничение FPS]])
+d([[setfpscap is not available in this executor.]], [[setfpscap недоступен в этом эксплойте.]])
+
+d([[Theme]], [[Тема]])
+d([[Afraid]], [[Afraid]])
+d([[graphite and silver]], [[графит и серебро]])
+d([[Obsidian]], [[Обсидиан]])
+d([[pure black]], [[чисто чёрная]])
+d([[Slate]], [[Сланец]])
+d([[cool steel blue]], [[холодный стальной синий]])
+d([[Silver]], [[Серебро]])
+d([[brushed steel]], [[шлифованная сталь]])
+d([[Bone]], [[Кость]])
+d([[light, warm grey]], [[светлая, тёплый серый]])
+d([[Colours and glass]], [[Цвета и стекло]])
+d([[Custom accent colour]], [[Свой акцентный цвет]])
+d([[Glass (see-through panels)]], [[Стекло (прозрачные панели)]])
+d([[Animation speed]], [[Скорость анимации]])
+d([[Lite mode (no background motion)]], [[Облегчённый режим (без движения фона)]])
+d([[Window]], [[Окно]])
+d([[Open / close animation]], [[Анимация открытия и закрытия]])
+d([[Ink bloom]], [[Растекание чернил]])
+d([[Animation length]], [[Длительность анимации]])
+d([[Menu scale]], [[Масштаб меню]])
+d([[Compact sidebar (icons only)]], [[Компактная боковая панель (только значки)]])
+d([[Start-up splash]], [[Заставка при запуске]])
+d([[Background picture]], [[Фоновая картинка]])
+d([[Scene]], [[Сцена]])
+d([[Theme default]], [[По умолчанию для темы]])
+d([[Darken]], [[Затемнение]])
+d([[Motion]], [[Движение]])
+d([[Drift]], [[Дрейф]])
+d([[Breathe]], [[Дыхание]])
+d([[Parallax]], [[Параллакс]])
+d([[Image ID]], [[ID картинки]])
+d([[anime / waifu image id]], [[ID аниме-картинки]])
+d([[Load as]], [[Загрузить как]])
+d([[Thumbnail]], [[Миниатюра]])
+d([[Apply image ID]], [[Применить ID картинки]])
+d([[Animated sprite sheet]], [[Анимированный лист спрайтов]])
+d([[Waifu theme + your own image id = animated anime menu. A sprite sheet (grid of frames in ONE image) plays as an animation; use Asset id mode for it.]], [[Тема «Waifu» + ваш ID картинки = анимированное аниме-меню. Лист спрайтов (сетка кадров в ОДНОЙ картинке) воспроизводится как анимация; для него используйте режим «Asset id».]])
+d([[Kind]], [[Вид]])
+d([[Amount]], [[Количество]])
+d([[Menu button]], [[Кнопка меню]])
+d([[Show round button]], [[Показывать круглую кнопку]])
+d([[Show HUD]], [[Показывать HUD]])
+d([[Sounds]], [[Звуки]])
+d([[Interface sounds]], [[Звуки интерфейса]])
+d([[Keys]], [[Клавиши]])
+d([[Menu key]], [[Клавиша меню]])
+d([[Right-click a function's name to open its bind window]], [[Нажмите правой кнопкой на название функции, чтобы открыть окно её клавиши]])
+d([[Right-click the NAME of any switch to open its bind window (on a touch screen: press and hold the name). A left click on the name or on the switch still toggles it. Press a key to bind it; Esc cancels, Backspace clears. Toggle = press to flip, Hold = on only while the key is held. Binds use the physical key, so they work on any keyboard layout, Russian too.]], [[Нажмите правой кнопкой на НАЗВАНИЕ любого выключателя, чтобы открыть окно его клавиши (на сенсорном экране — нажмите и удерживайте название). Левый клик по названию или по выключателю по-прежнему переключает функцию. Нажмите клавишу, чтобы назначить её; Esc отменяет, Backspace очищает. «Переключатель» — нажатие меняет состояние, «Удержание» — включено, только пока клавиша зажата. Назначения привязаны к физической клавише, поэтому работают в любой раскладке, в том числе в русской.]])
+d([[Clear all binds]], [[Очистить все клавиши]])
+d([[Your binds]], [[Ваши клавиши]])
+d([[No binds yet. Right-click the name of any switch and press a key.]], [[Клавиш пока нет. Нажмите правой кнопкой на название любого выключателя и нажмите клавишу.]])
+d([[Screen buttons]], [[Кнопки на экране]])
+d([[Nothing is created until you ask for it. Add a button for any function here, or open a function's bind window and choose Button. Place it on the real screen, set the size and how it presses.]], [[Ничего не создаётся, пока вы сами не попросите. Добавьте кнопку для любой функции здесь или откройте окно клавиши функции и выберите «Кнопка». Поставьте её на реальный экран, задайте размер и способ нажатия.]])
+d([[Add a button...]], [[Добавить кнопку...]])
+d([[Lock all]], [[Закрепить все]])
+d([[Unlock all]], [[Открепить все]])
+d([[No screen buttons. Nothing is created until you add one.]], [[Кнопок на экране нет. Ничего не создаётся, пока вы не добавите.]])
+
+d([[SilentAim]], [[Тихая наводка]])
+d([[Desync]], [[Рассинхрон]])
+d([[BunnyHop]], [[Банихоп]])
+d([[HighJump]], [[Высокий прыжок]])
+d([[InfJump]], [[Бесконечный прыжок]])
+d([[Spider]], [[Паук]])
+d([[AirWalk]], [[Воздушный шаг]])
+d([[ClickTP]], [[ТП по клику]])
+d([[Follow]], [[Следование]])
+d([[AntiVoid]], [[Анти-бездна]])
+d([[NoClip]], [[Сквозь стены]])
+d([[Freeze]], [[Заморозка]])
+d([[HitMarker]], [[Маркер попадания]])
+d([[DamageNumbers]], [[Числа урона]])
+d([[HurtFX]], [[Эффект урона]])
+d([[KillFX]], [[Эффекты убийства]])
+d([[CineBars]], [[Кино-полосы]])
+d([[MotionBlur]], [[Размытие]])
+d([[CursorFX]], [[Эффекты курсора]])
+d([[MM2 ESP]], [[MM2: ESP]])
+d([[SilentGun]], [[Тихий пистолет]])
+d([[SilentKnife]], [[Тихий нож]])
+d([[AutoKill]], [[Автоубийство]])
+d([[AutoMurder]], [[Авто-убийца]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[The language is kept on its own and is never saved in a config: loading a config, importing a code or switching configs does not change it.]], [[Язык хранится отдельно и никогда не сохраняется в конфиге: загрузка конфига, импорт кода или смена конфига его не меняют.]])
+
+d([[Configs]], [[Конфиги]])
+d([[Name]], [[Название]])
+d([[config name]], [[название конфига]])
+d([[Save config]], [[Сохранить конфиг]])
+d([[Saved]], [[Сохранённые]])
+d([[Pick a saved config to see what it switches on.]], [[Выберите сохранённый конфиг, чтобы увидеть, что он включает.]])
+d([[Load selected]], [[Загрузить выбранный]])
+d([[What is inside the selected config]], [[Что внутри выбранного конфига]])
+d([[What am I using right now]], [[Что включено сейчас]])
+d([[Refresh list]], [[Обновить список]])
+d([[Autoload this config at start]], [[Загружать этот конфиг при запуске]])
+d([[Clear autoload]], [[Отключить автозагрузку]])
+d([[Diagnostics]], [[Диагностика]])
+d([[Open Telegram on start]], [[Открывать Telegram при запуске]])
+d([[Telegram: @Ipsi1an]], [[Telegram: @Ipsi1an]])
+d([[Copy debug report]], [[Скопировать отчёт об ошибках]])
+d([[Show world / fx status]], [[Показать состояние мира и эффектов]])
+d([[Unload Afraid Side]], [[Выгрузить Afraid Side]])
+d([[Share a config]], [[Поделиться конфигом]])
+d([[Copy your setup as one line of text and send it to anyone. To try someone else's setup, paste their code into the field and import it.]], [[Скопируйте свои настройки одной строкой текста и отправьте кому угодно. Чтобы попробовать чужие настройки, вставьте его код в поле и импортируйте.]])
+d([[Copy my current settings as a code]], [[Скопировать мои текущие настройки как код]])
+d([[Copy the selected saved config as a code]], [[Скопировать выбранный сохранённый конфиг как код]])
+d([[paste a config code here]], [[вставьте сюда код конфига]])
+d([[Paste a code to see what is inside before you import it.]], [[Вставьте код, чтобы увидеть содержимое до импорта.]])
+d([[Keep my menu settings and binds]], [[Сохранить мои настройки меню и клавиши]])
+d([[Import pasted code]], [[Импортировать вставленный код]])
+d([[Import and save under the name on the left]], [[Импортировать и сохранить под названием слева]])
+d([[Clear the field]], [[Очистить поле]])
+
+d([[Update 15 (newest) - Light, catalog, Russian]], [[Обновление 15 (новое) — свет, каталог, язык]])
+d([[- The holograms are now made of light: thin glowing lines with a white core and a faint fill, like the old light wings but in 3D, so they look the same from the front, the side and the back. Holo Angel Wings are rebuilt from glowing feathers.]], [[- Голограммы теперь сделаны из света: тонкие светящиеся линии с белой сердцевиной и слабой заливкой, как старые световые крылья, но в 3D — поэтому они одинаково выглядят спереди, сбоку и сзади. Крылья Holo Angel пересобраны из светящихся перьев.]])
+d([[- New: Holo Beam Wings (the old fan of light lines, improved) and the quick look Holo Angelic (Beam Wings + Halo).]], [[- Новое: Holo Beam Wings (прежний веер из линий света, улучшенный) и быстрый образ Holo Angelic (Beam Wings + нимб).]])
+d([[- New slider Accessories > Hologram body: 0 shows only the lines of light, higher values bring back the glass-like fill. The big soft glow sprites were made smaller so they are not cut by your body from the front.]], [[- Новый ползунок «Аксессуары > Тело голограммы»: 0 оставляет только линии света, большие значения возвращают стеклянную заливку. Большие мягкие световые пятна уменьшены, чтобы тело не обрезало их спереди.]])
+d([[- Catalog redesign: it opens wide, with your character on the right wearing everything you put on (your own accessories too) and the catalog on the left, split into sections with a grid of 5 by 5 items. Scroll down for more.]], [[- Новый каталог: он открывается широким, справа ваш персонаж в том, что вы надели (и в ваших собственных аксессуарах), слева каталог с разделами и сеткой 5 на 5 предметов. Прокрутите вниз, чтобы увидеть остальное.]])
+d([[- Skyboxes: a sky that comes without one of its six pictures no longer looks like a cube. Sky > Skybox > Missing sky pictures (Auto / Black / Copy a side / Leave) fills the gap. Hide this sky removes a sky for good, and Check all skies lists the ones with gaps.]], [[- Скайбоксы: небо, у которого нет одной из шести картинок, больше не выглядит как куб. «Небо > Скайбокс > Пустые стороны неба» (Авто / Чёрный / Копия стороны / Оставить) закрывает пробел. «Скрыть это небо» убирает небо насовсем, а «Проверить все небеса» показывает те, где есть пробелы.]])
+d([[- New language switch in Config > Language: the whole menu can be English or Russian. The choice is kept on its own and is never part of a config, so loading a config or a code does not change it. Search understands Russian words too.]], [[- Переключатель языка в «Конфиг > Язык»: всё меню можно показать по-английски или по-русски. Выбор хранится отдельно и никогда не входит в конфиг, поэтому загрузка конфига или кода его не меняет. Поиск понимает и русские слова.]])
+d([[Update 13 - Catalog fixes]], [[Обновление 13 — исправления каталога]])
+d([[- Catalog items no longer flash and vanish: hats, horns and hair are fitted rigid so they always show, a missing weld is made by hand, and an item the game keeps removing is fitted from outside your character. New switches in Catalog > Wearing now: Fit on the body (Auto / Layered / Rigid) and Mount (Auto / On character / Detached). The line under every worn item says how it was fitted.]], [[- Предметы каталога больше не мигают и не пропадают: шляпы, рога и волосы сажаются жёстко, поэтому всегда видны, недостающее крепление создаётся вручную, а предмет, который игра всё время удаляет, крепится снаружи персонажа. Новые переключатели в «Каталог > Надето сейчас»: «Посадка на тело» (Авто / Многослойная / Жёсткая) и «Крепление» (Авто / На персонаже / Отдельно). Строка под каждым надетым предметом сообщает, как он был надет.]])
+d([[- New Catalog section On my character: every accessory, shirt, pants, T-shirt and face you wear right now, each with Take off and Put back, plus Take everything off and Put everything back. A respawn brings your outfit back.]], [[- Новый раздел каталога «На моём персонаже»: каждый аксессуар, рубашка, штаны, футболка и лицо, которые на вас сейчас, у каждого есть «Снять» и «Вернуть», а также «Снять всё» и «Вернуть всё обратно». После возрождения наряд возвращается.]])
+d([[Update 11 - side window, tabs, phone buttons]], [[Обновление 11 — боковое окно, вкладки, кнопки для телефона]])
+d([[- Side settings window next to the menu for every function.]], [[- Боковое окно настроек рядом с меню для каждой функции.]])
+d([[- Five sidebar tabs: Combat, Visuals, Move, Misc, Settings.]], [[- Пять вкладок на боковой панели: Бой, Визуал, Движение, Разное, Настройки.]])
+d([[- Auto BDC: back dash cancel for The Strongest Battlegrounds (Combat).]], [[- Авто BDC: отмена рывка назад для The Strongest Battlegrounds (Бой).]])
+d([[- Phone screen buttons: choose the size, drag them, lock them in place.]], [[- Кнопки на экране для телефона: выберите размер, перетащите, закрепите на месте.]])
+d([[- Stretched resolution as a screen option.]], [[- Растянутое разрешение как настройка экрана.]])
+d([[- Darker, softer interface sounds.]], [[- Более тёмные и мягкие звуки интерфейса.]])
+d([[Update 9 - Catalog, Avatar, themes]], [[Обновление 9 — каталог, аватар, темы]])
+d([[- Catalog: browse Roblox accessories and clothes, try them on, share your whole look as a code.]], [[- Каталог: просматривайте аксессуары и одежду Roblox, примеряйте их, делитесь всем своим образом в виде кода.]])
+d([[- Avatar: Korblox leg, Headless, copy another player's look and restore yours.]], [[- Аватар: нога Korblox, Headless, копирование образа другого игрока и возврат своего.]])
+d([[- Photo themes with moving backgrounds; restyled window, sidebar and top bar.]], [[- Фото-темы с движущимся фоном; обновлённые окно, боковая и верхняя панели.]])
+d([[- Sounds for switches and for opening / closing the menu.]], [[- Звуки выключателей и открытия / закрытия меню.]])
+d([[Update 7 - Accessories and stability]], [[Обновление 7 — аксессуары и стабильность]])
+d([[- 3D accessories with a flight model for the wings.]], [[- 3D-аксессуары с моделью полёта для крыльев.]])
+d([[- Fixes for crashes when changing accessories and at start-up.]], [[- Исправлены вылеты при смене аксессуаров и при запуске.]])
+d([[- Analyzer script for finding game remotes.]], [[- Скрипт-анализатор для поиска ремотов игры.]])
+d([[Update 5 - effects]], [[Обновление 5 — эффекты]])
+d([[- ESP redesign with a live preview next to the settings.]], [[- Новый дизайн ESP с живым предпросмотром рядом с настройками.]])
+d([[- Aura, Trail, Kill FX, World seals, Particles (snow, stars ...), Constellations.]], [[- Аура, шлейф, эффекты убийства, печати мира, частицы (снег, звёзды ...), созвездия.]])
+d([[- Sky clarity, Post FX, Filters, Screen tools.]], [[- Чёткость неба, пост-эффекты, фильтры, инструменты экрана.]])
+d([[Update 14 - Holograms]], [[Обновление 14 — голограммы]])
+d([[- All old accessories are gone. Accessories now has holograms: Holo Angel Wings, Holo Demon Wings, Circuit Wings, Holo Halo, Holo Horns, Holo Crown, Gyro Rings, Orbit Shards, Scan Ring and Floor Sigil. Wings carry nothing on the head.]], [[- Все старые аксессуары убраны. Теперь в «Аксессуарах» голограммы: Holo Angel Wings, Holo Demon Wings, Circuit Wings, Holo Halo, Holo Horns, Holo Crown, Gyro Rings, Orbit Shards, Scan Ring и Floor Sigil. Крылья ничего не несут на голове.]])
+d([[- Hologram shimmer (a scan band climbing the body, flicker, glitches) with a Hologram strength slider, plus pixel and spark particles. Four ready looks: Holo Seraph, Holo Demon, Holo Cyber and Holo Full.]], [[- Мерцание голограммы (полоса сканирования, поднимающаяся по телу, мигание, сбои) с ползунком «Сила голограммы», а также частицы-пиксели и искры. Четыре готовых образа: Holo Seraph, Holo Demon, Holo Cyber и Holo Full.]])
+d([[- Catalog: a button Take everything off takes off every accessory, shirt, pants and face you wear, and the catalog items too. Put everything back returns your own outfit.]], [[- Каталог: кнопка «Снять всё» снимает все аксессуары, рубашку, штаны и лицо, которые на вас, и предметы из каталога тоже. «Вернуть всё обратно» возвращает ваш собственный наряд.]])
+d([[Update 12 - everything in the side window]], [[Обновление 12 — всё в боковом окне]])
+d([[- Every function shows only its switch and key bind. Click the row: all its settings open in the window on the right.]], [[- У каждой функции виден только выключатель и клавиша. Нажмите на строку — все её настройки откроются в окне справа.]])
+d([[- Edit layout (Visuals > Client): drag the watermark, module list, notifications, keybinds, target HUD, health bar, info overlay and keystrokes.]], [[- Правка расположения (Визуал > Клиент): тяните водяной знак, список модулей, уведомления, список клавиш, панель цели, полоску здоровья, информационную панель и нажатия клавиш.]])
+d([[- Stretched screen with ratio presets: 1:1, 5:4, 4:3, 3:2, 16:10, 16:9, 21:9 and Custom (Visuals > Screen).]], [[- Растянутый экран с готовыми пропорциями: 1:1, 5:4, 4:3, 3:2, 16:10, 16:9, 21:9 и «Свои» (Визуал > Экран).]])
+d([[- Lighter interface sounds and a Tone slider (Settings > Themes).]], [[- Более лёгкие звуки интерфейса и ползунок «Тон» (Настройки > Темы).]])
+d([[- This What's new page (Misc).]], [[- Эта страница «Что нового» (Разное).]])
+d([[Update 10 - Client panels and Fake visuals]], [[Обновление 10 — панели клиента и фейк-визуал]])
+d([[- Client tab: module list, watermark, notifications, keybinds panel, target HUD, health bar.]], [[- Вкладка «Клиент»: список модулей, водяной знак, уведомления, панель клавиш, панель цели, полоска здоровья.]])
+d([[- Fake visuals: a decoy of your body that drifts, roams past other players and strikes with your tool.]], [[- Фейк-визуал: двойник вашего тела, который дрейфует, ходит мимо других игроков и бьёт вашим инструментом.]])
+d([[- Invisibility fixes: the held tool stays, you wait far away, the tool works after you leave.]], [[- Исправления невидимости: инструмент в руках остаётся, вы ждёте вдали, инструмент работает и после того, как вы ушли.]])
+d([[- Minecraft-style visuals and sounds: crosshair, hit marker, floating damage numbers, hurt flash.]], [[- Визуал и звуки в стиле Minecraft: прицел, маркер попадания, всплывающие числа урона, вспышка при уроне.]])
+d([[Update 8 - Movement and configs]], [[Обновление 8 — движение и конфиги]])
+d([[- Move tab: Fly, speed, jump power, infinite jump, dash, glide, wall climb, noclip, gravity, spin, air-walk platform, teleports, anti-void.]], [[- Вкладка «Движение»: полёт, скорость, сила прыжка, бесконечный прыжок, рывок, планирование, лазание по стенам, noclip, гравитация, вращение, платформа в воздухе, телепорты, анти-бездна.]])
+d([[- Config codes: share your config as a code, import someone else's (the content is detected automatically).]], [[- Коды конфигов: делитесь конфигом в виде кода, импортируйте чужой (содержимое определяется автоматически).]])
+d([[- FFlags presets with a frame rate cap, and the Optimize page.]], [[- Наборы FFlag с ограничением FPS и страница «Оптимизация».]])
+d([[Update 6 - Games and aim]], [[Обновление 6 — игры и наведение]])
+d([[- Murder Mystery 2: role ESP, silent aim, auto kill murderer, auto murderer.]], [[- Murder Mystery 2: ESP по ролям, silent aim, авто-убийство мардера, авто-мардер.]])
+d([[- Da Hood silent aim with FOV circle, target tag and line.]], [[- Silent aim для Da Hood с кругом FOV, меткой цели и линией.]])
+d([[- Aim assist with FOV circle, target info and line to the target.]], [[- Помощь в наведении с кругом FOV, сведениями о цели и линией к цели.]])
+d([[Updates 1-4 - the base]], [[Обновления 1–4 — основа]])
+d([[- Menu with themes, search and a round button for phones.]], [[- Меню с темами, поиском и круглой кнопкой для телефонов.]])
+d([[- First visuals: sky boxes, bloom, colour correction, atmosphere, fog.]], [[- Первые визуальные эффекты: скайбоксы, свечение, цветокоррекция, атмосфера, туман.]])
+d([[- Smooth animations, optimisation and the Afraid Side logo.]], [[- Плавные анимации, оптимизация и логотип Afraid Side.]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[FOV radius]], [[Радиус FOV]])
+d([[Target part]], [[Часть тела цели]])
+d([[Head]], [[Голова]])
+d([[Torso]], [[Туловище]])
+d([[Hit chance]], [[Шанс попадания]])
+d([[Visible only (no shots through walls)]], [[Только видимые (без выстрелов сквозь стены)]])
+d([[Skip knocked out players]], [[Пропускать нокаутированных игроков]])
+d([[Skip players with a forcefield]], [[Пропускать игроков с force field]])
+d([[Aim from]], [[Целиться от]])
+d([[Mouse]], [[Мышь]])
+d([[Center]], [[Центр]])
+d([[Every shot of your gun goes to the player closest to the cursor inside the circle. Head first; if the head is covered the visible part is shot. Auto: the cursor on PC, the middle of the screen on phones. Needs hookfunction.]], [[Каждый выстрел из вашего оружия летит в игрока, ближайшего к курсору внутри круга. Сначала голова; если голова закрыта, стреляет по видимой части. «Авто»: курсор на ПК, середина экрана на телефонах. Нужен hookfunction.]])
+d([[Follow the menu colour]], [[Цвет как у меню]])
+d([[Own colour]], [[Свой цвет]])
+d([[Uses the FOV circle colour.]], [[Берёт цвет круга FOV.]])
+d([[Smooth]], [[Плавно]])
+d([[CFrame]], [[CFrame]])
+d([[Velocity]], [[Скорость (Velocity)]])
+d([[Vertical speed]], [[Вертикальная скорость]])
+d([[Acceleration]], [[Разгон]])
+d([[Braking]], [[Торможение]])
+d([[Direction]], [[Направление]])
+d([[Flat]], [[По горизонтали]])
+d([[Off]], [[Выкл]])
+d([[Lean]], [[Наклон]])
+d([[Boost multiplier]], [[Множитель ускорения]])
+d([[Slow multiplier]], [[Множитель замедления]])
+d([[Pass through walls]], [[Проходить сквозь стены]])
+d([[Keep animations]], [[Сохранять анимации]])
+d([[Mouse wheel changes speed]], [[Колесо мыши меняет скорость]])
+d([[Jump button flies up (touch)]], [[Кнопка прыжка летит вверх (сенсор)]])
+d([[Up]], [[Вверх]])
+d([[Space]], [[Пробел]])
+d([[Down]], [[Вниз]])
+d([[LCtrl]], [[Левый Ctrl]])
+d([[Boost (hold)]], [[Ускорение (удерживать)]])
+d([[LShift]], [[Левый Shift]])
+d([[Slow (hold)]], [[Замедление (удерживать)]])
+d([[LAlt]], [[Левый Alt]])
+d([[Bind a key to the Fly switch itself: right-click the name of the switch.]], [[Назначить клавишу самому выключателю полёта: нажмите правой кнопкой на его название.]])
+d([[WalkSpeed]], [[Скорость ходьбы (WalkSpeed)]])
+d([[Re-apply when the game resets it]], [[Применять заново, если игра сбрасывает]])
+d([[Sprint key / BOOST button]], [[Клавиша спринта / кнопка BOOST]])
+d([[Sprint (hold)]], [[Спринт (удерживать)]])
+d([[Sprint multiplier]], [[Множитель спринта]])
+d([[Speed gain per hop]], [[Прирост скорости за прыжок]])
+d([[Maximum bonus]], [[Максимальный бонус]])
+d([[Hold the jump key on the ground.]], [[Удерживайте клавишу прыжка на земле.]])
+d([[Power]], [[Сила]])
+d([[Air jumps (0 = unlimited)]], [[Прыжки в воздухе (0 = без ограничений)]])
+d([[Delay between jumps]], [[Задержка между прыжками]])
+d([[Dash key]], [[Клавиша рывка]])
+d([[Force]], [[Сила толчка]])
+d([[Upward kick]], [[Толчок вверх]])
+d([[Cooldown]], [[Перезарядка]])
+d([[Fall speed]], [[Скорость падения]])
+d([[Forward speed]], [[Скорость вперёд]])
+d([[Hold the jump key in the air.]], [[Удерживайте клавишу прыжка в воздухе.]])
+d([[Climb speed]], [[Скорость лазания]])
+d([[Walk into a wall or hold the jump key next to it.]], [[Идите в стену или удерживайте клавишу прыжка рядом с ней.]])
+d([[Custom]], [[Своё]])
+d([[Gravity]], [[Гравитация]])
+d([[Show platform]], [[Показывать платформу]])
+d([[Raise it with the Up key, lower it with the Down key.]], [[Поднимайте клавишей «Вверх», опускайте клавишей «Вниз».]])
+d([[Trigger]], [[Запуск]])
+d([[Key + click]], [[Клавиша + клик]])
+d([[Always]], [[Всегда]])
+d([[Key]], [[Клавиша]])
+d([[Travel]], [[Перемещение]])
+d([[Instant]], [[Мгновенно]])
+d([[Tween]], [[Плавно (Tween)]])
+d([[Tween time]], [[Время перемещения]])
+d([[Height offset]], [[Смещение по высоте]])
+d([[Style]], [[Стиль]])
+d([[Behind]], [[Сзади]])
+d([[Distance]], [[Расстояние]])
+d([[Orbit speed]], [[Скорость орбиты]])
+d([[Return to]], [[Вернуться в]])
+d([[Safe spot]], [[Безопасное место]])
+d([[Spawn]], [[Спавн]])
+d([[Trigger above the kill height]], [[Срабатывать выше высоты гибели]])
+
+d([[Mode]], [[Режим]])
+d([[Hold]], [[Удержание]])
+d([[Toggle]], [[Переключатель]])
+d([[Aim key]], [[Клавиша наведения]])
+d([[Also hold right mouse button]], [[Также удерживать правую кнопку мыши]])
+d([[Smoothing]], [[Сглаживание]])
+d([[Max turn speed]], [[Макс. скорость поворота]])
+d([[Prediction]], [[Упреждение]])
+d([[Vertical offset]], [[Смещение по вертикали]])
+d([[Start delay]], [[Задержка старта]])
+d([[Hand shake]], [[Дрожание руки]])
+d([[Checks]], [[Проверки]])
+d([[Visible only (wall check)]], [[Только видимые (проверка стен)]])
+d([[Ignore teammates]], [[Игнорировать союзников]])
+d([[Ignore ForceField]], [[Игнорировать ForceField]])
+d([[Stay on the target until it is lost]], [[Держать цель, пока она не потеряна]])
+d([[Targeting]], [[Выбор цели]])
+d([[Targets]], [[Цели]])
+d([[Players]], [[Игроки]])
+d([[Max distance]], [[Макс. расстояние]])
+d([[Priority]], [[Приоритет]])
+d([[Closest]], [[Ближайший]])
+d([[Lowest HP]], [[Меньше всего HP]])
+d([[Circle centre]], [[Центр круга]])
+d([[FOV circle and marker]], [[Круг FOV и маркер]])
+d([[Show the FOV circle]], [[Показывать круг FOV]])
+d([[Thickness]], [[Толщина]])
+d([[Fill]], [[Заливка]])
+d([[Hue]], [[Оттенок]])
+d([[Target name, distance and health]], [[Имя цели, расстояние и здоровье]])
+d([[Aim screen button]], [[Кнопка наведения на экране]])
+d([[Camera turns the view toward the target. Mouse moves the cursor relatively (needs mousemoverel). Hold uses the key, right mouse or your own screen button (created above; nothing appears by itself).]], [[«Камера» поворачивает вид к цели. «Мышь» смещает курсор относительно (нужен mousemoverel). «Удержание» использует клавишу, правую кнопку мыши или вашу экранную кнопку (создаётся выше; сама ничего не появляется).]])
+
+d([[Skill keys]], [[Клавиши умений]])
+d([[Key or button]], [[Клавиша или кнопка]])
+d([[Skills]], [[Умения]])
+d([[Dash direction]], [[Направление рывка]])
+d([[Back (S)]], [[Назад (S)]])
+d([[Skill delay]], [[Задержка умения]])
+d([[Release after]], [[Отпустить через]])
+d([[Input method]], [[Способ ввода]])
+d([[Own key]], [[Своя клавиша]])
+d([[BDC screen button]], [[Кнопка BDC на экране]])
+d([[Press a picked skill key and the script holds the dash direction, taps the dash key, waits the skill delay and taps the skill: the dash is cut by the skill. Lower the delay if the skill comes out too late, raise it if the dash does not happen. Key or button mode leaves the skill keys alone and only reacts to your own key or the screen button. If a skill fires twice, switch the trigger to Key or button.]], [[Нажмите выбранную клавишу умения — скрипт удержит направление рывка, нажмёт клавишу рывка, подождёт задержку умения и нажмёт умение: рывок обрывается умением. Уменьшите задержку, если умение срабатывает слишком поздно, увеличьте, если рывок не происходит. Режим «Клавиша или кнопка» не трогает клавиши умений и реагирует только на вашу клавишу или экранную кнопку. Если умение срабатывает дважды, переключите запуск на «Клавиша или кнопка».]])
+r([[^Game: place (%d+) %(not The Strongest Battlegrounds %- keys may differ%)$]], [[Игра: place {1} (не The Strongest Battlegrounds — клавиши могут отличаться)]])
+d([[Virtual input]], [[виртуальный ввод]])
+r([[^fired (%d+)x$]], [[срабатываний: {1}]])
+
+d([[Real body]], [[Настоящее тело]])
+d([[Far]], [[Далеко]])
+d([[Roam]], [[Бродить]])
+d([[Far distance]], [[Дальность]])
+d([[Space height]], [[Высота в космосе]])
+d([[Slow drift in space]], [[Медленный дрейф в космосе]])
+d([[Roam speed]], [[Скорость блуждания]])
+d([[Roam height]], [[Высота блуждания]])
+d([[Roam past other players]], [[Проходить мимо других игроков]])
+d([[Hide the real body on my screen]], [[Скрыть настоящее тело на моём экране]])
+d([[Stop below this real HP]], [[Остановиться ниже этого HP настоящего тела]])
+d([[You keep playing on a copy that stays where you are. Everyone else, and every ESP, sees the real body far away. Far: it stands still about 50,000 studs away on an invisible floor. Space: it hangs high above. Roam: it flies around the map. Tools you hold are handed back to your backpack when you leave.]], [[Вы продолжаете играть за копию, которая остаётся там, где вы стоите. Все остальные и любой ESP видят настоящее тело далеко. «Далеко»: оно неподвижно стоит примерно в 50 000 стадов на невидимом полу. «Космос»: оно висит высоко над землёй. «Бродить»: оно летает по карте. Инструменты в ваших руках возвращаются в рюкзак, когда вы уходите.]])
+d([[Strike]], [[Удар]])
+d([[Strike key]], [[Клавиша удара]])
+d([[Strike now]], [[Ударить сейчас]])
+d([[Target]], [[Цель]])
+d([[Range from you]], [[Радиус вокруг вас]])
+d([[Time next to the target]], [[Время рядом с целью]])
+d([[Distance to the target]], [[Расстояние до цели]])
+d([[Use my tool during a strike]], [[Использовать мой инструмент при ударе]])
+d([[Strike screen button]], [[Кнопка удара на экране]])
+d([[A strike moves the real body next to the target, uses the tool and returns it to the parking spot. The game decides whether the hit counts.]], [[Удар переносит настоящее тело к цели, использует инструмент и возвращает тело на стоянку. Засчитается ли попадание, решает игра.]])
+d([[Range]], [[Дальность]])
+d([[Hide my teammates]], [[Скрывать моих союзников]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[Live preview]], [[Живой предпросмотр]])
+d([[Live preview of the box / label style]], [[Живой предпросмотр стиля рамки и подписей]])
+d([[Preview health]], [[Здоровье в предпросмотре]])
+d([[Colour]], [[Цвет]])
+d([[Team]], [[Команда]])
+d([[Health]], [[Здоровье]])
+d([[Rainbow]], [[Радуга]])
+d([[Custom hue]], [[Свой оттенок]])
+d([[Custom saturation]], [[Своя насыщенность]])
+d([[Box]], [[Рамка]])
+d([[Corners]], [[Углы]])
+d([[Gradient]], [[Градиент]])
+d([[Solid]], [[Сплошная]])
+d([[Fill transparency]], [[Прозрачность заливки]])
+d([[Box width]], [[Ширина рамки]])
+d([[Box height]], [[Высота рамки]])
+d([[Two-colour outline and fill]], [[Двухцветный контур и заливка]])
+d([[Animated outline]], [[Анимированный контур]])
+d([[Soft glow around the box]], [[Мягкое свечение вокруг рамки]])
+d([[Labels]], [[Подписи]])
+d([[Name shows]], [[Имя показывает]])
+d([[Display]], [[Отображаемое имя]])
+d([[Username]], [[Ник]])
+d([[Dark pills behind text]], [[Тёмные плашки под текстом]])
+d([[Text size]], [[Размер текста]])
+d([[Health bar position]], [[Положение полоски здоровья]])
+d([[Above]], [[Сверху]])
+d([[Below]], [[Снизу]])
+d([[Left]], [[Слева]])
+d([[Right]], [[Справа]])
+d([[Health bar style]], [[Стиль полоски здоровья]])
+d([[Segments]], [[Сегменты]])
+d([[Capsule]], [[Капсула]])
+d([[Colour by health]], [[Цвет по здоровью]])
+d([[Health number]], [[Число здоровья]])
+d([[Damage chip (white trail after a hit)]], [[След урона (белый хвост после попадания)]])
+d([[Pulse when health is low]], [[Пульс при низком здоровье]])
+d([[Held tool]], [[Инструмент в руках]])
+d([[Smoothness]], [[Плавность]])
+d([[Update rate]], [[Частота обновления]])
+d([[Every frame]], [[Каждый кадр]])
+d([[30 Hz]], [[30 Гц]])
+d([[15 Hz]], [[15 Гц]])
+d([[Lead (predict movement)]], [[Упреждение (предсказание движения)]])
+d([[The boxes are drawn after the camera moves each frame, so they stay glued to players. Use Lead only if you still see a delay on a laggy server.]], [[Рамки рисуются после каждого движения камеры, поэтому прилипают к игрокам. Включайте упреждение, только если на лагающем сервере всё ещё заметна задержка.]])
+d([[From]], [[Откуда]])
+d([[Bottom]], [[Снизу экрана]])
+d([[Top]], [[Сверху экрана]])
+d([[Line width]], [[Ширина линии]])
+d([[Arrow radius]], [[Радиус стрелок]])
+d([[See through walls]], [[Видно сквозь стены]])
+d([[Outline transparency]], [[Прозрачность контура]])
+d([[Pulse]], [[Пульсация]])
+d([[Roblox draws ~31 highlights at once; the nearest players get them first (shared with Cosmetics).]], [[Roblox рисует одновременно около 31 подсветки; сначала они достаются ближайшим игрокам (общий лимит с «Косметикой»).]])
+d([[Skeleton / head range]], [[Дальность скелета и головы]])
+d([[Head circle]], [[Круг головы]])
+d([[Bones are drawn for the 12 nearest players inside the range. The head circle follows the real head size.]], [[Кости рисуются для 12 ближайших игроков в пределах дальности. Круг головы повторяет настоящий размер головы.]])
+d([[Position]], [[Положение]])
+d([[Top Right]], [[Сверху справа]])
+d([[Top Left]], [[Сверху слева]])
+d([[Bottom Left]], [[Снизу слева]])
+d([[Bottom Right]], [[Снизу справа]])
+d([[Shape]], [[Форма]])
+d([[Circle]], [[Круг]])
+d([[Square]], [[Квадрат]])
+d([[Size]], [[Размер]])
+d([[Dot size]], [[Размер точек]])
+d([[Background see-through]], [[Прозрачность фона]])
+d([[Rotating sweep]], [[Вращающийся луч]])
+d([[View cone]], [[Конус обзора]])
+d([[Arrows for players above / below]], [[Стрелки для игроков выше и ниже]])
+d([[Show teammates]], [[Показывать союзников]])
+d([[Rotates with your camera. Faded dots on the edge are players beyond the range.]], [[Поворачивается вместе с камерой. Бледные точки на краю — игроки за пределами дальности.]])
+
+d([[Also hide hats / hair / face items]], [[Также скрывать шляпы, волосы и предметы на лице]])
+d([[Headless hides the head and face.]], [[«Без головы» скрывает голову и лицо.]])
+d([[Mesh ID]], [[ID меша]])
+d([[Bone leg]], [[Костяная нога]])
+d([[Bone leg glow colour]], [[Цвет свечения костяной ноги]])
+d([[Korblox uses the community mesh ids when your executor may write MeshId, otherwise it builds an armoured bone leg from parts (works everywhere).]], [[Korblox использует меши сообщества, если ваш эксплойт может записывать MeshId, иначе собирает бронированную костяную ногу из деталей (работает везде).]])
+r([[^Others: (%d+) in range %((%d+) st%), effects on (%d+)  |  accessories (%d+), auras (%d+)$]], [[Другие: в радиусе {1} ({2} ст.), эффекты у {3}  |  аксессуаров {4}, аур {5}]])
+
+d([[Quick looks]], [[Быстрые образы]])
+d([[Feet]], [[Ноги]])
+d([[Floating]], [[Парение]])
+d([[Opacity]], [[Непрозрачность]])
+d([[Animate (flap, spin, float)]], [[Анимация (взмахи, вращение, парение)]])
+d([[Hologram shimmer (scan line, flicker, glitch)]], [[Мерцание голограммы (линия сканирования, мигание, сбои)]])
+d([[Hologram strength]], [[Сила голограммы]])
+d([[Hologram body (0 = only lines of light)]], [[Тело голограммы (0 = только линии света)]])
+d([[Hologram particles (pixels, sparks)]], [[Частицы голограммы (пиксели, искры)]])
+d([[Particle amount]], [[Количество частиц]])
+d([[Smooth models (generated meshes)]], [[Гладкие модели (сгенерированные меши)]])
+d([[Model detail]], [[Детализация моделей]])
+d([[Normal]], [[Обычная]])
+r([[^Smooth models: ready, (%d+) files written, verified$]], [[Гладкие модели: готово, записано файлов: {1}, проверено]])
+d([[Custom colours (else each model's own)]], [[Свои цвета (иначе цвета самих моделей)]])
+d([[Main hue]], [[Основной оттенок]])
+d([[Glow hue]], [[Оттенок свечения]])
+d([[Saturation]], [[Насыщенность]])
+d([[Holograms welded to your body: they stay on from every camera angle. Pick a model in the preview below to look at it alone.]], [[Голограммы приварены к телу: они на месте при любом ракурсе камеры. Выберите модель в предпросмотре ниже, чтобы рассмотреть её отдельно.]])
+d([[Rainbow colours]], [[Радужные цвета]])
+d([[Switch an effect on and the master switch turns itself on. Others are only styled inside the range / budget of the optimizer.]], [[Включите эффект — и главный выключатель включится сам. У других игроков эффекты показываются только в пределах радиуса и бюджета оптимизатора.]])
+r([[^(.-): waiting: the master switch "Cosmetics" %(top of this tab%) is OFF$]], [[{t1}: ждёт — главный выключатель «Косметика» (вверху вкладки) выключен]])
+d([[off]], [[выкл]])
+d([[Material]], [[Материал]])
+d([[Neon]], [[Неон]])
+d([[Include accessories]], [[Включая аксессуары]])
+d([[Extra transparency]], [[Дополнительная прозрачность]])
+d([[Custom colour]], [[Свой цвет]])
+d([[Anime eye trails]], [[Аниме-следы от глаз]])
+d([[Bolts]], [[Молнии]])
+d([[Strike rate]], [[Частота ударов]])
+d([[Ground strikes (flash + sparks)]], [[Удары по земле (вспышка и искры)]])
+d([[Sky bolts]], [[Молнии с неба]])
+d([[Arcs crawling over the body]], [[Дуги, бегущие по телу]])
+d([[Dark Flame]], [[Тёмное пламя]])
+d([[Density]], [[Плотность]])
+d([[Rune]], [[Руна]])
+d([[Height]], [[Высота]])
+d([[Transparency (lower = more visible)]], [[Прозрачность (меньше = заметнее)]])
+d([[Object]], [[Объект]])
+d([[Holy Swords]], [[Священные мечи]])
+d([[Path]], [[Путь]])
+d([[Ring]], [[Кольцо]])
+d([[Count]], [[Число]])
+d([[Trails]], [[Шлейфы]])
+d([[Radius]], [[Радиус]])
+d([[Rate]], [[Частота]])
+d([[Fade time]], [[Время затухания]])
+d([[Lotus]], [[Лотос]])
+d([[Lifetime]], [[Время жизни]])
+d([[Types]], [[Виды]])
+d([[Water Vortex, Motes]], [[Водоворот, пылинки]])
+d([[Range for other players (all effects)]], [[Радиус для других игроков (все эффекты)]])
+d([[Custom colour (else per-type)]], [[Свой цвет (иначе по виду)]])
+d([[Glide speed]], [[Скорость скольжения]])
+d([[On: the jump circle, the aura rings on the floor and the ground seal settle onto the real texture (kerbs, stairs, slopes) and glide smoothly instead of being nailed to your feet. Off: the old rigid feet attachment.]], [[Вкл: круг прыжка, кольца ауры на полу и печать на земле ложатся на реальную поверхность (бордюры, лестницы, склоны) и плавно скользят, а не прибиты к ногам. Выкл: прежнее жёсткое крепление к ногам.]])
+d([[Magic]], [[Магия]])
+d([[Life]], [[Жизнь]])
+d([[Grow]], [[Рост]])
+d([[Test circle]], [[Проверить круг]])
+d([[Split (two feet)]], [[Раздельно (две ноги)]])
+d([[Always on (even standing)]], [[Всегда включён (даже стоя)]])
+d([[Test trail (7 s)]], [[Проверить шлейф (7 с)]])
+d([[Length]], [[Длина]])
+d([[Speed / spread]], [[Скорость и разброс]])
+d([[Main saturation]], [[Основная насыщенность]])
+d([[Fade hue]], [[Оттенок затухания]])
+d([[Fade saturation]], [[Насыщенность затухания]])
+d([[Neon Burst]], [[Неоновый взрыв]])
+d([[Test kill effect]], [[Проверить эффект убийства]])
+d([[Preview every style]], [[Просмотреть каждый стиль]])
+d([[Each style is a timed sequence: build-up, flash, burst and afterglow. The test uses a copy of your own avatar a few steps in front of you.]], [[Каждый стиль — последовательность по времени: нарастание, вспышка, взрыв и послесвечение. Проверка использует копию вашего аватара в нескольких шагах перед вами.]])
+d([[Magic circle on the ground]], [[Магический круг на земле]])
+d([[Solid 3D parts (shards, ghost, beams)]], [[Объёмные 3D-детали (осколки, призрак, лучи)]])
+d([[Screen flash and glow]], [[Вспышка и свечение на экране]])
+d([[Dissolve the body]], [[Растворять тело]])
+d([[Sakura Burst and Blood Mist keep their own colours. Solid parts are skipped automatically when many effects play at once or the FPS governor is on a high tier.]], [[«Взрыв сакуры» и «Кровавый туман» сохраняют свои цвета. Объёмные детали автоматически пропускаются, когда одновременно идёт много эффектов или ограничитель FPS на высоком уровне.]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+
+d([[Night Chill]], [[Ночная прохлада]])
+d([[Match look to chosen sky]], [[Подбирать вид под выбранное небо]])
+d([[Transition time]], [[Время перехода]])
+d([[Presets change sky, light, fog, bloom, grade, weather and vignette together, smoothly.]], [[Наборы плавно меняют небо, свет, туман, свечение, цветокоррекцию, погоду и виньетку все вместе.]])
+d([[Clock time]], [[Время на часах]])
+d([[Day / night cycle]], [[Смена дня и ночи]])
+d([[Cycle length]], [[Длина цикла]])
+d([[Outdoor boost]], [[Усиление на улице]])
+d([[Strength]], [[Сила]])
+d([[Start]], [[Начало]])
+d([[End]], [[Конец]])
+d([[Clarity]], [[Чёткость]])
+d([[Sky focus (haze / clouds / blur off)]], [[Фокус на небе (дымка, облака и размытие убираются)]])
+d([[Atmosphere haze, clouds, depth-of-field blur and bloom are thinned out so the skybox picture stays readable. 0 = the look exactly as set, 1 = nearly raw sky.]], [[Дымка атмосферы, облака, размытие глубины резкости и свечение ослабляются, чтобы картинка скайбокса оставалась читаемой. 0 = вид ровно как настроен, 1 = почти чистое небо.]])
+d([[Cycle every]], [[Менять каждые]])
+d([[Intensity]], [[Интенсивность]])
+d([[Threshold]], [[Порог]])
+d([[Spread]], [[Разброс]])
+d([[Contrast]], [[Контраст]])
+d([[Tint hue]], [[Оттенок тонировки]])
+d([[Tint strength]], [[Сила тонировки]])
+d([[Offset]], [[Смещение]])
+d([[Color hue]], [[Оттенок цвета]])
+d([[Color sat]], [[Насыщенность цвета]])
+d([[Color value]], [[Яркость цвета]])
+d([[Decay hue]], [[Оттенок затухания]])
+d([[Decay sat]], [[Насыщенность затухания]])
+d([[Decay value]], [[Яркость затухания]])
+d([[Glare]], [[Блики]])
+d([[Haze]], [[Дымка]])
+d([[Cover]], [[Покрытие]])
+d([[Far blur]], [[Размытие вдали]])
+d([[Near blur]], [[Размытие вблизи]])
+d([[Focus distance]], [[Расстояние фокуса]])
+d([[In-focus radius]], [[Радиус резкости]])
+d([[Ash]], [[Пепел]])
+d([[Stardust]], [[Звёздная пыль]])
+d([[Fireflies]], [[Светлячки]])
+d([[Lanterns]], [[Фонарики]])
+d([[Cycle time]], [[Время цикла]])
+d([[Diagram]], [[Диаграмма]])
+d([[Pentagram]], [[Пентаграмма]])
+d([[Hexagram]], [[Гексаграмма]])
+d([[Layers]], [[Слои]])
+d([[Breathing]], [[Дыхание]])
+d([[Zodiac]], [[Зодиак]])
+d([[Height above horizon]], [[Высота над горизонтом]])
+d([[Put it where I look]], [[Поставить туда, куда я смотрю]])
+d([[Lift]], [[Подъём]])
+d([[Rising sparks]], [[Поднимающиеся искры]])
+d([[Light pillar]], [[Столб света]])
+
+d([[Stars (total)]], [[Звёзд (всего)]])
+d([[Exact count]], [[Точное число]])
+d([[20 - 2000]], [[20 – 2000]])
+d([[Generate where the camera looks]], [[Создавать там, куда смотрит камера]])
+d([[View sector (each side)]], [[Сектор обзора (в каждую сторону)]])
+d([[Figure size]], [[Размер фигур]])
+d([[Draw them in line by line]], [[Рисовать по линиям]])
+d([[Keep figures (no lifetime)]], [[Оставлять фигуры (без времени жизни)]])
+d([[Sky drift speed]], [[Скорость дрейфа неба]])
+d([[Generate a new sky]], [[Создать новое небо]])
+d([[Neat line figures (dipper, W, arcs, polygons, pentagrams, fans, trees...) are generated in front of the camera, drawn in line by line and drift together like a sky layer. Lines stay the same pixel width at any zoom. Thousands of stars cost more FPS: lower the count on a phone.]], [[Аккуратные фигуры из линий (ковш, W, дуги, многоугольники, пентаграммы, веера, деревья...) создаются перед камерой, рисуются по линиям и дрейфуют вместе, как слой неба. Ширина линий в пикселях не зависит от масштаба. Тысячи звёзд снижают FPS: на телефоне уменьшайте число.]])
+d([[Stars on the corners]], [[Звёзды в углах]])
+d([[Star size]], [[Размер звёзд]])
+d([[Gap between star and line]], [[Зазор между звездой и линией]])
+d([[Lowest above horizon]], [[Самая низкая над горизонтом]])
+d([[Highest]], [[Самая высокая]])
+d([[Constellation Night look (sky + figures)]], [[Образ «Ночь созвездий» (небо и фигуры)]])
+
+d([[Aspect ratio]], [[Соотношение сторон]])
+d([[4:3]], [[4:3]])
+d([[Vertical scale]], [[Масштаб по вертикали]])
+d([[Horizontal scale]], [[Масштаб по горизонтали]])
+d([[Flip the direction]], [[Перевернуть направление]])
+d([[Pick the shape the picture should look like. 4:3 on a wide screen makes players wider, 21:9 makes them thinner. A preset follows your window when you resize it; moving the vertical slider switches to Custom. If the picture goes the wrong way, switch Flip the direction on.]], [[Выберите форму, какой должна выглядеть картинка. 4:3 на широком экране делает игроков шире, 21:9 — тоньше. Готовый вариант следует за окном при изменении его размера; если подвинуть ползунок по вертикали, включится «Свои». Если картинка растянулась не в ту сторону, включите «Перевернуть направление».]])
+d([[FOV]], [[FOV]])
+d([[Zoom key (hold)]], [[Клавиша приближения (удерживать)]])
+d([[Zoomed FOV]], [[FOV при приближении]])
+d([[Zoom toggle (touch)]], [[Переключатель приближения (сенсор)]])
+d([[Anime Pop]], [[Аниме-поп]])
+d([[Night Vision, Noir, Sepia, Cyberpunk, Anime Pop, Dreamy, Vintage, Blood Rage, Frostbite, Toxic. Blends smoothly.]], [[Ночное видение, нуар, сепия, киберпанк, аниме-поп, мечтательный, винтаж, кровавая ярость, мороз, токсичный. Плавно смешивается.]])
+d([[Starts at speed]], [[Включается со скорости]])
+
+d([[Cross]], [[Крест]])
+d([[Gap]], [[Зазор]])
+d([[Spread while moving]], [[Расширение при движении]])
+d([[Centre dot]], [[Точка в центре]])
+d([[Dark outline]], [[Тёмный контур]])
+d([[Hide system cursor]], [[Скрыть системный курсор]])
+d([[Detect radius]], [[Радиус определения]])
+d([[Test hit]], [[Проверить попадание]])
+d([[Test kill]], [[Проверить убийство]])
+d([[Hit sound]], [[Звук попадания]])
+d([[Pling]], [[Звонок]])
+d([[Plays when damage lands near your crosshair, the same test the hit marker uses.]], [[Звучит, когда урон приходится рядом с вашим прицелом; проверка та же, что у маркера попадания.]])
+d([[Kill sound]], [[Звук убийства]])
+d([[Level up]], [[Новый уровень]])
+d([[Pop]], [[Хлопок]])
+d([[Float]], [[Всплытие]])
+d([[Arc]], [[Дуга]])
+d([[Big-hit threshold]], [[Порог сильного удара]])
+d([[Big-hit hue]], [[Оттенок сильного удара]])
+d([[Also show damage I take]], [[Показывать и получаемый мной урон]])
+d([[Show healing (green)]], [[Показывать лечение (зелёное)]])
+d([[Reads Humanoid health changes. Visual feedback only, nothing is sent to the game.]], [[Читает изменения здоровья Humanoid. Только визуальный отклик, в игру ничего не отправляется.]])
+d([[Low-HP below]], [[Низкое HP ниже]])
+d([[Pill]], [[Плашка]])
+d([[Stack]], [[Столбик]])
+d([[Minimal]], [[Минимальный]])
+d([[FPS]], [[FPS]])
+d([[Ping]], [[Пинг]])
+d([[Clock]], [[Часы]])
+d([[Coordinates]], [[Координаты]])
+d([[Scale]], [[Масштаб]])
+d([[Click effect]], [[Эффект клика]])
+d([[Effect size]], [[Размер эффекта]])
+d([[Mouse trail]], [[След мыши]])
+d([[Trail length]], [[Длина следа]])
+d([[Ripples on every click / tap, a glowing trail behind the mouse.]], [[Волны при каждом клике или касании, светящийся след за мышью.]])
+d([[Bar]], [[Полоса]])
+d([[Glass]], [[Стекло]])
+d([[Plain]], [[Простой]])
+d([[Accent]], [[Акцент]])
+d([[Distance from the edge]], [[Расстояние от края]])
+d([[Order]], [[Порядок]])
+d([[Alphabet]], [[По алфавиту]])
+d([[Every module that is on, as a rounded plate. Colours follow the menu theme.]], [[Каждый включённый модуль — в виде скруглённой плашки. Цвета следуют теме меню.]])
+d([[Notification position]], [[Положение уведомлений]])
+d([[Client switch sounds]], [[Звуки переключения клиента]])
+d([[Panels stay out of the way while the menu is open.]], [[Пока меню открыто, панели не мешают.]])
+d([[Distance from the top]], [[Расстояние от верха]])
+d([[Only modules that are on]], [[Только включённые модули]])
+d([[Lists every switch that has a key. Set a key by right-clicking the name of a switch.]], [[Перечисляет все выключатели, у которых есть клавиша. Клавишу задают нажатием правой кнопки на название выключателя.]])
+d([[Under crosshair]], [[Под прицелом]])
+d([[Pick radius around crosshair]], [[Радиус выбора вокруг прицела]])
+d([[Keep after a hit]], [[Держать после попадания]])
+d([[Avatar, name, health and distance of the aim target, the player nearest to your crosshair, or the last one you hit.]], [[Аватар, имя, здоровье и расстояние до цели наведения — игрока, ближайшего к вашему прицелу, или того, в кого вы попали последним.]])
+d([[Height above the bottom]], [[Высота над низом]])
+d([[Your own health with a trailing bar.]], [[Ваше здоровье с отстающей полосой.]])
+d([[Target FPS]], [[Целевой FPS]])
+d([[The governor thins out our own particles, blur, bloom and constellations in 4 steps, then restores them.]], [[Ограничитель в 4 шага убирает наши частицы, размытие, свечение и созвездия, а потом возвращает их.]])
+d([[Cap]], [[Предел]])
+d([[No cap]], [[Без ограничения]])
+d([[Accent hue]], [[Оттенок акцента]])
+d([[Columns]], [[Столбцы]])
+d([[Rows]], [[Строки]])
+d([[Frame width]], [[Ширина рамки]])
+d([[Frame height]], [[Высота рамки]])
+d([[Idle opacity]], [[Прозрачность в покое]])
+d([[Snap to screen edge]], [[Привязка к краю экрана]])
+d([[Lock position]], [[Закрепить положение]])
+d([[Pulse ring]], [[Пульсирующее кольцо]])
+d([[Reset button position]], [[Сбросить положение кнопки]])
+d([[Player name]], [[Имя игрока]])
+d([[Reset position]], [[Сбросить положение]])
+d([[Off by default. While the menu is open you can drag the HUD anywhere.]], [[По умолчанию выключено. Пока меню открыто, HUD можно перетащить куда угодно.]])
+
+d([[Volume]], [[Громкость]])
+d([[Tone: darker - lighter]], [[Тон: темнее — светлее]])
+d([[Soft]], [[Мягкие]])
+d([[Pixel]], [[Пиксельные]])
+d([[Switches on / off]], [[Включение и выключение]])
+d([[Menu open / close]], [[Открытие и закрытие меню]])
+d([[Clicks, tabs, alerts]], [[Клики, вкладки, оповещения]])
+d([[Play: on]], [[Проиграть: включение]])
+d([[Play: off]], [[Проиграть: выключение]])
+d([[Play: menu]], [[Проиграть: меню]])
+d([[Sounds are generated by the script and saved once in the AfraidSide/sfx folder. They need file support (writefile and getcustomasset).]], [[Звуки создаются скриптом и один раз сохраняются в папку AfraidSide/sfx. Нужна поддержка файлов (writefile и getcustomasset).]])
+d([[Click the key, then press one. Esc cancels, Backspace clears.]], [[Нажмите на поле клавиши, затем нажмите нужную клавишу. Esc отменяет, Backspace очищает.]])
+d([[Clear]], [[Очистить]])
+d([[Screen button]], [[Кнопка на экране]])
+d([[Afraid Side]], [[Afraid Side]])
+d([[Scroll down for more]], [[Прокрутите вниз, чтобы увидеть ещё]])
+end
+do
+local d, r = UIX.LANG.word, UIX.LANG.rule
+local plural = UIX.LANG.plural
+
+local function players(n) return n .. " " .. plural(n, "игрока", "игроков", "игроков") end
+
+r([[^(.-): active on (%d+) players?$]], function(c, tr) return tr(c[1]) .. ": активно у " .. players(tonumber(c[2])) end)
+r([[^active on (%d+) players?$]], function(c) return "активно у " .. players(tonumber(c[1])) end)
+r([[^waiting: the master switch "Cosmetics" %(top of this tab%) is OFF$]], [[ждёт — главный выключатель «Косметика» (вверху вкладки) выключен]])
+r([[^waiting: no player matches Target "(.-)" %(or out of range%)$]], [[ждёт — нет игрока под цель «{1}» (или он вне радиуса)]])
+r([[^ERROR: (.+)$]], [[ОШИБКА: {1}]])
+d([[this effect only shows on you]], [[этот эффект виден только на вас]])
+d([[No cosmetic effect is switched on.]], [[Ни один косметический эффект не включён.]])
+r([[^(%d+) bolts?$]], function(c) return "молний: " .. c[1] end)
+r([[^(%d+) skin arcs?$]], function(c) return "дуг по коже: " .. c[1] end)
+r([[^(%d+) flame emitters?$]], function(c) return "источников пламени: " .. c[1] end)
+r([[^(%d+) body parts restyled$]], function(c) return "частей тела изменено: " .. c[1] end)
+r([[^bubble (%d+) studs$]], [[пузырь {1} стад.]])
+r([[^layered sigil %((.-)%)$]], [[многослойный знак ({t1})]])
+d([[highlight outline]], [[контур-подсветка]])
+d([[Light]], [[Свет тела]])
+d([[Eyes]], [[Глаза]])
+d([[Lightning]], [[Молнии]])
+d([[Flames]], [[Пламя]])
+d([[Skin]], [[Кожа]])
+d([[Shield]], [[Щит]])
+d([[Sigil]], [[Знак]])
+d([[Outline]], [[Контур]])
+d([[Steps]], [[Следы]])
+d([[Ghosts]], [[Призраки]])
+r([[^Others: nobody else in this server$]], [[Другие: больше никого на сервере]])
+r([[^Others: (%d+) in the server, none within (%d+) st %- raise Range in the Aura tab$]], [[Другие: на сервере {1}, в радиусе {2} ст. никого — увеличьте «Радиус» на вкладке «Аура»]])
+r([[^Others: (%d+) in range, effects on the nearest (%d+) %(auto quality tier (%d+), turn it off in Optimize to lift the limit%)$]], [[Другие: в радиусе {1}, эффекты у ближайших {2} (авто-качество, уровень {3}; отключите его в «Оптимизации», чтобы снять ограничение)]])
+r([[^Others: (%d+) in range %((%d+) st%), effects on (%d+)  |  accessories (%d+), auras (%d+)$]], [[Другие: в радиусе {1} ({2} ст.), эффекты у {3}  |  аксессуаров {4}, аур {5}]])
+
+r([[^%+  (.+)$]], [[+  {t1}]])
+r([[^✓  (.+)$]], [[✓  {t1}]])
+r([[^(%d+) modules changed$]], [[Изменено модулей: {1}]])
+r([[^FLY  (.+)$]], [[ПОЛЁТ  {1}]])
+r([[^SPEED  (.+)$]], [[СКОРОСТЬ  {1}]])
+r([[^GRAV  (.+)$]], [[ГРАВ.  {1}]])
+r([[^DASH  ready$]], [[РЫВОК  готов]])
+r([[^DASH  (.+)$]], [[РЫВОК  {1}]])
+d([[CLIMB]], [[ЛАЗАНИЕ]])
+d([[GLIDE]], [[ПЛАНЕР]])
+d([[CLICK TP]], [[ТП КЛИКОМ]])
+d([[Forward (W)]], [[Вперёд (W)]])
+d([[Left (A)]], [[Влево (A)]])
+d([[Right (D)]], [[Вправо (D)]])
+d([[LMB]], [[ЛКМ]])
+d([[RMB]], [[ПКМ]])
+d([[Adds a button on your screen that switches this function. Drag it to move it, lock it to keep it in place. It is only created when you turn this on.]], [[Добавляет на экран кнопку, которая переключает эту функцию. Перетащите её, чтобы переместить, и закрепите, чтобы она не сдвигалась. Кнопка создаётся, только когда вы это включите.]])
+
+r([=[^(.-)  %[([^%]]+)%]( ?#?%d*)$]=], [=[{t1}  [{t2}]{3}]=])
+d([[(none)]], [[(нет)]])
+
+r([[^(.-): on$]], [[{t1}: вкл]])
+r([[^(.-): off$]], [[{t1}: выкл]])
+r([[^([%w_]+) hold$]], [[{1} (удержание)]])
+r([[^(.-): worn$]], [[{1}: надето]])
+r([[^([%w_]+)  hold$]], [[{1} (удержание)]])
+
+d([[Photo backgrounds need file support (writefile + getcustomasset) in this executor]], [[Для фото-фонов нужна поддержка файлов (writefile и getcustomasset) в этом эксплойте]])
+d([[No file/texture API in this executor: using basic particle textures]], [[В этом эксплойте нет API файлов и текстур: используются простые текстуры частиц]])
+r([[^Smooth models unavailable %((.-)%): using basic shapes$]], [[Гладкие модели недоступны ({1}): используются простые формы]])
+d([[Smooth models unavailable: no file API in this executor (basic shapes used)]], [[Гладкие модели недоступны: в этом эксплойте нет файлового API (используются простые формы)]])
+d([[Smooth models unavailable: verified (basic shapes used)]], [[Гладкие модели недоступны: проверка пройдена (используются простые формы)]])
+d([[Smooth models: not started]], [[Гладкие модели: не запускались]])
+d([[Building models...]], [[Создание моделей...]])
+r([[^Background image (%d+) did not load %(use a Decal/Image asset id%)$]], [[Фоновая картинка {1} не загрузилась (используйте ID ассета типа Decal или Image)]])
+d([[That key opens the menu - pick another one]], [[Эта клавиша открывает меню — выберите другую]])
+d([[This button is not available here]], [[Эта кнопка здесь недоступна]])
+d([[Switch a HUD panel on first (HUD and Client tabs)]], [[Сначала включите панель HUD (вкладки «HUD» и «Клиент»)]])
+r([[^Sky loaded: (.+)$]], [[Небо загружено: {1}]])
+r([[^Sky failed %((.-)%): (.+)$]], [[Небо не загрузилось ({t1}): {2}]])
+d([[this model has no sky pictures]], [[в этой модели нет картинок неба]])
+r([[^(.-): missing (.-) pictures? %- filled with (.+)$]], function(c, tr)
+    local how = { ["black"] = "чёрным цветом", ["a copy of a side picture"] = "копией боковой картинки" }
+    return c[1] .. ": нет картинки (" .. tr(c[2]) .. ") — заполнено " .. (how[c[3]] or c[3])
+end)
+d([[Graphics quality raised for post-fx]], [[Качество графики повышено для пост-эффектов]])
+d([[Only the skies from the list can be hidden]], [[Скрыть можно только небо из списка]])
+r([[^Hidden: (.-)%. The button 'Show hidden skies' brings it back%.$]], [[Скрыто: {1}. Кнопка «Показать скрытые небеса» вернёт его.]])
+r([[^(%d+) hidden skies are back in the list$]], function(c) return "Скрытых небес возвращено в список: " .. c[1] end)
+d([[No sky is hidden]], [[Скрытых небес нет]])
+d([[Enter a numeric Sky asset ID]], [[Введите числовой ID ассета неба]])
+r([[^Loading (%d+) %.%.%.$]], [[Загрузка {1} ...]])
+r([[^Custom sky failed: (.+)$]], [[Своё небо не загрузилось: {1}]])
+r([[^Checking (%d+) skies%.%.%.$]], [[Проверка небес: {1}...]])
+r([[^Skies OK: (%d+) / (%d+)$]], [[Небес в порядке: {1} из {2}]])
+r([[^Failed: (.+)$]], [[Не удалось: {1}]])
+r([[^(%d+) skies lack a picture and are filled by 'Missing sky pictures': (.+)$]], function(c) return "Небес без одной из картинок: " .. c[1] .. "; их закрывает пункт «Недостающие картинки неба»: " .. c[2] end)
+r([[^Show hidden skies %((%d+)%)$]], [[Показать скрытые небеса ({1})]])
+r([[^This sky has no own picture for: (.-)%. Without a fix the engine shows its default sky there, which looks like a cube%. Now: (.-)%.$]], function(c, tr)
+    local how = { ["black"] = "чёрный цвет", ["a copy of a side picture"] = "копия боковой картинки", ["left as they were"] = "оставлено как было" }
+    return "У этого неба нет собственной картинки для: " .. tr(c[1]) .. ". Без исправления движок показывает там своё стандартное небо, и небо выглядит как куб. Сейчас: " .. (how[c[2]] or c[2]) .. "."
+end)
+d([[Up]], [[Вверх]])
+d([[Down]], [[Вниз]])
+d([[Left]], [[Слева]])
+d([[Right]], [[Справа]])
+d([[Front]], [[Спереди]])
+d([[Back]], [[Сзади]])
+d([[Test trail for 7s: run around (walk = denser)]], [[Проверка шлейфа 7 с: побегайте (шаг = плотнее)]])
+r([[^Previewing (%d+) kill effects$]], [[Просмотр эффектов убийства: {1}]])
+r([[^Too many models selected %((%d+) parts%): remove a few$]], [[Выбрано слишком много моделей (деталей: {1}): уберите несколько]])
+d([[Scan copied to the clipboard]], [[Скан скопирован в буфер обмена]])
+d([[No clipboard: scan saved to workspace/mm2_scan.txt]], [[Нет буфера обмена: скан сохранён в workspace/mm2_scan.txt]])
+d([[No clipboard: scan printed to the console (F9)]], [[Нет буфера обмена: скан выведен в консоль (F9)]])
+d([[Learned layouts cleared: shoot / throw once yourself to learn again]], [[Выученные раскладки очищены: чтобы выучить заново, один раз выстрелите или бросьте сами]])
+d([[Da Hood silent aim ready]], [[Silent aim для Da Hood готов]])
+r([[^Da Hood: (.+)$]], [[Da Hood: {t1}]])
+r([[^Not active: (.+)$]], [[Не активно: {t1}]])
+d([[ReplicatedStorage.Modules.GunHandler not found (this is not Da Hood, or the game changed)]], [[ReplicatedStorage.Modules.GunHandler не найден (это не Da Hood или игра изменилась)]])
+d([[executor has no hookfunction / require]], [[в эксплойте нет hookfunction или require]])
+d([[Hooked]], [[Перехвачено]])
+r([[^Hooked%. Target: (.-)%. Shots redirected: (%d+) / (%d+)$]], [[Перехвачено. Цель: {1}. Выстрелов перенаправлено: {2} из {3}]])
+d([[Fly on]], [[Полёт включён]])
+d([[Fly off]], [[Полёт выключен]])
+r([[^Players: (%d+)$]], [[Игроков: {1}]])
+d([[No player to teleport to]], [[Нет игрока для телепорта]])
+r([[^Spot (%d+) saved %((.-)%)$]], [[Точка {1} сохранена ({2})]])
+r([[^Spot (%d+) is empty$]], [[Точка {1} пуста]])
+r([[^Spot (%d+)$]], [[Точка {1}]])
+d([[No spawn point found]], [[Точка спавна не найдена]])
+d([[Anti-void: pulled back]], [[Анти-бездна: вас вернули назад]])
+d([[Movement: everything off]], [[Движение: всё выключено]])
+d([[Aim: on]], [[Наведение: вкл]])
+d([[Aim: off]], [[Наведение: выкл]])
+d([[Aim: mouse method unavailable in this executor, using the camera]], [[Наведение: способ «Мышь» недоступен в этом эксплойте, используется камера]])
+d([[Strike: nobody in range]], [[Удар: в радиусе никого нет]])
+d([[Fake visuals off: you respawned]], [[Фейк-визуал выключен: вы возродились]])
+d([[Fake visuals stopped: the game replaced your character]], [[Фейк-визуал остановлен: игра заменила вашего персонажа]])
+d([[Fake visuals stopped: the real body is down to 20%]], [[Фейк-визуал остановлен: у настоящего тела осталось 20% здоровья]])
+d([[Fake visuals stopped: the real body is gone]], [[Фейк-визуал остановлен: настоящее тело пропало]])
+r([[^Fake visuals: (.+)$]], [[Фейк-визуал: {t1}]])
+d([[could not start]], [[не удалось запустить]])
+r([[^You are wearing (%d+) catalog items already %- take one off first$]], [[На вас уже надето предметов из каталога: {1} — сначала снимите один]])
+r([[^Could not load (.-): (.+)$]], [[Не удалось загрузить {1}: {t2}]])
+r([[^Could not use (.-): the clothing has no texture$]], [[Не удалось использовать {1}: у одежды нет текстуры]])
+d([[the asset is empty or not wearable]], [[ассет пуст или его нельзя надеть]])
+d([[not an accessory or classic clothing]], [[это не аксессуар и не классическая одежда]])
+d([[timed out]], [[время ожидания истекло]])
+d([[Look code copied]], [[Код образа скопирован]])
+r([[^Look code copied %((%d+) chars%)$]], [[Код образа скопирован (символов: {1})]])
+d([[No clipboard API: the code is in the field]], [[Нет API буфера обмена: код лежит в поле]])
+d([[Clipboard is empty or unavailable]], [[Буфер обмена пуст или недоступен]])
+r([[^Look code: (.+)$]], [[Код образа: {t1}]])
+d([[Look applied]], [[Образ применён]])
+r([[^Look applied %((%d+) changes%)%. Undo brings your previous look back%.$]], [[Образ применён (изменений: {1}). «Отменить» вернёт прежний образ.]])
+d([[Your previous look is back]], [[Прежний образ возвращён]])
+r([[^Cannot use this code: (.+)$]], [[Этот код нельзя использовать: {t1}]])
+r([[^Could not build the code: (.+)$]], [[Не удалось собрать код: {t1}]])
+d([[Could not build the code]], [[Не удалось собрать код]])
+d([[No clipboard in this executor: the code is in the field below - select it and copy]], [[В этом эксплойте нет буфера обмена: код лежит в поле ниже — выделите его и скопируйте]])
+d([[Paste a look code to see what is inside before you wear it]], [[Вставьте код образа, чтобы увидеть содержимое до того, как наденете]])
+r([[^This code would apply:\n(.+)$]], [[Этот код применит:\n{t1}]])
+r([[^Equipped: (.+)$]], [[Надето: {1}]])
+d([[Pick a single model in the Show list first]], [[Сначала выберите одну модель в списке «Показать»]])
+d([[Accessories cleared]], [[Аксессуары сняты]])
+r([[^Particles: (.+)$]], [[Частицы: {t1}]])
+d([[Constellation Night]], [[Ночь созвездий]])
+d([[Drag a panel, then press Done]], [[Перетащите панель, затем нажмите «Готово»]])
+d([[Drag a panel]], [[Перетащите панель]])
+d([[Drag the button]], [[Перетащите кнопку]])
+d([[Done]], [[Готово]])
+d([[Panels are back in their places]], [[Панели возвращены на свои места]])
+r([[^Flags set: (%d+)$]], [[Флагов задано: {1}]])
+r([[^Restored flags: (%d+)$]], [[Флагов восстановлено: {1}]])
+r([[^Restored (%d+) flags to the values they had before, (%d+) had no readable original value and stay as set until you rejoin%.$]], [[Восстановлено флагов: {1}. У {2} флагов не удалось прочитать исходное значение, они останутся как заданы, пока вы не перезайдёте.]])
+d([[Could not build the file]], [[Не удалось собрать файл]])
+d([[Copied: put it into the Roblox ClientSettings folder as ClientAppSettings.json]], [[Скопировано: положите это в папку ClientSettings Roblox как ClientAppSettings.json]])
+d([[No clipboard API]], [[Нет API буфера обмена]])
+d([[Flag set]], [[Флаг задан]])
+d([[Could not set the flag]], [[Не удалось задать флаг]])
+r([[^Could not set: (.+)$]], [[Не удалось задать: {t1}]])
+d([[setfflag is not available in this executor]], [[setfflag недоступен в этом эксплойте]])
+d([[setfflag is not available in this executor. Use "Copy as ClientAppSettings.json" instead.]], [[setfflag недоступен в этом эксплойте. Используйте вместо него «Скопировать как ClientAppSettings.json».]])
+d([[setfflag is not available.]], [[setfflag недоступен.]])
+d([[Cannot read this flag (unknown name or no getfflag)]], [[Не удаётся прочитать флаг (неизвестное имя или нет getfflag)]])
+r([[^(.-): (%d+)/(%d+) flags accepted, (%d+) read back with the new value%. Flags the engine reads only at start%-up need a rejoin%.$]], [[{t1}: принято флагов {2} из {3}, с новым значением прочитано {4}. Флаги, которые движок читает только при запуске, требуют перезахода.]])
+r([[^(.-) = (.-) %(read back ok%)$]], [[{1} = {2} (проверено чтением)]])
+r([[^(.-) = (.-) %(read back differs: the engine ignored it%)$]], [[{1} = {2} (прочитано другое значение: движок проигнорировал)]])
+d([[Type a numeric Decal / Image id first]], [[Сначала введите числовой ID Decal или Image]])
+r([[^Loading background (.+)$]], [[Загрузка фона {1}]])
+d([[No file API in this executor]], [[В этом эксплойте нет файлового API]])
+d([[No file API]], [[Нет файлового API]])
+r([[^Saved config: (.+)$]], [[Конфиг сохранён: {1}]])
+r([[^Loaded config: (.+)$]], [[Конфиг загружен: {1}]])
+r([[^Autoloaded config: (.+)$]], [[Конфиг загружен автоматически: {1}]])
+r([[^Config not found: (.+)$]], [[Конфиг не найден: {1}]])
+r([[^Config is corrupt: (.+)$]], [[Конфиг повреждён: {1}]])
+d([[Made by @ipsi1an]], [[Автор: @ipsi1an]])
+r([[^Made by @ipsi1an  |  t%.me/Ipsi1an$]], [[Автор: @ipsi1an  |  t.me/Ipsi1an]])
+r([[^Telegram @Ipsi1an  |  link copied: (.+)$]], [[Telegram @Ipsi1an  |  ссылка скопирована: {1}]])
+r([[^Removed (%d+) bind%(s%) that used the menu key$]], [[Убрано клавиш, использовавших клавишу меню: {1}]])
+d([[All binds cleared]], [[Все клавиши очищены]])
+d([[Could not write autoload]], [[Не удалось записать автозагрузку]])
+r([[^Autoload: (.+)$]], [[Автозагрузка: {1}]])
+d([[Autoload cleared]], [[Автозагрузка отключена]])
+r([[^(.+) copied %((%d+) chars%)$]], [[{t1} скопировано (символов: {2})]])
+d([[Your settings]], [[Ваши настройки]])
+d([[No clipboard API: the code is in the field below, select it and copy]], [[Нет API буфера обмена: код лежит в поле ниже, выделите его и скопируйте]])
+d([[Pick a saved config first]], [[Сначала выберите сохранённый конфиг]])
+r([[^Import failed: (.+)$]], [[Импорт не удался: {t1}]])
+r([[^Cannot import: (.+)$]], [[Нельзя импортировать: {t1}]])
+d([[the code is cut off (copy it whole)]], [[код обрезан (копируйте его целиком)]])
+d([[this is a Look code - paste it in the Catalog tab (Share your look)]], [[это код образа — вставьте его на вкладке «Каталог» (Поделиться образом)]])
+r([[^Imported (%d+) settings$]], [[Импортировано настроек: {1}]])
+d([[Imported:]], [[Импортировано:]])
+d([[Debug report copied]], [[Отчёт об ошибках скопирован]])
+r([[^fx: (%d+) auras, (%d+) trails, (%d+) emitters$]], [[эффекты: аур {1}, шлейфов {2}, излучателей {3}]])
+r([[^sky: (.-) | tier (%d+)$]], [[небо: {1} | уровень {2}]])
+r([[^Afraid Side ready  |  (.-) or the logo button toggles the menu$]], [[Afraid Side готов  |  {1} или кнопка с логотипом открывает меню]])
+d([[Notifications]], [[Уведомления]])
+
+d([[This code switches on:]], [[Этот код включает:]])
+d([[Right now:]], [[Сейчас:]])
+r([[^Inside "(.-)":$]], [[Внутри «{1}»:]])
+d([[Show HUD: on]], [[Показывать HUD: вкл]])
+d([[Show HUD: off]], [[Показывать HUD: выкл]])
+d([[Snap: on]], [[Привязка: вкл]])
+d([[Snap: off]], [[Привязка: выкл]])
+d([[Start-up splash: off]], [[Заставка при запуске: выкл]])
+r([[^Moving: (.+)$]], [[Двигается: {t1}]])
+
+r([[^(%d+) items$]], [[Предметов: {1}]])
+r([[^page (%d+)$]], [[страница {1}]])
+d([[last page]], [[последняя страница]])
+d([[via in-game search]], [[через поиск в игре]])
+d([[via mirror]], [[через зеркало]])
+d([[scroll for more]], [[прокрутите, чтобы увидеть ещё]])
+d([[that is everything]], [[это всё]])
+d([[Loading...]], [[Загрузка...]])
+d([[Loading more...]], [[Загружаю ещё...]])
+r([[^Searching%.%.%. (%d+) found, (%d+) checked$]], [[Поиск... найдено: {1}, проверено: {2}]])
+d([[Roblox is rate limiting the catalog, retrying...]], [[Roblox ограничивает запросы к каталогу, пробую снова...]])
+r([[^Could not load the catalog: (.+)$]], [[Не удалось загрузить каталог: {1}]])
+r([[^Could not load more: (.+)$]], [[Не удалось загрузить ещё: {1}]])
+r([[^Nothing found for "(.-)" %- try another word or type$]], [[По запросу «{1}» ничего не найдено — попробуйте другое слово или тип]])
+d([[Nothing to show: the catalog could not be reached. Details are above, press Search to try again.]], [[Показывать нечего: каталог недоступен. Подробности выше, нажмите «Поиск», чтобы попробовать снова.]])
+d([[That is everything for this search]], [[Это всё по данному запросу]])
+d([[Nothing yet - pick items on the left.]], [[Пока ничего — выберите предметы слева.]])
+d([[Nothing to take off]], [[Снимать нечего]])
+d([[Take off]], [[Снять]])
+d([[Put back]], [[Вернуть]])
+r([[^(%d+) items? taken off %- press Put everything back to wear your own again$]], [[Снято предметов: {1} — нажмите «Вернуть всё обратно», чтобы снова надеть свои]])
+r([[^(%d+) items are back$]], [[Возвращено предметов: {1}]])
+r([[^(%d+) item is back$]], [[Возвращено предметов: {1}]])
+r([[^(.-) is back$]], [[Возвращено: {1}]])
+r([[^(.-) taken off %- press Put back to wear it again$]], [[{1} снято — нажмите «Вернуть», чтобы надеть снова]])
+r([[^Replaced (.-) with (.+)$]], [[{1} заменено на {2}]])
+d([[taken off  |  press Put back]], [[снято  |  нажмите «Вернуть»]])
+d([[accessory]], [[аксессуар]])
+d([[classic clothing]], [[классическая одежда]])
+r([[^id (%d+)$]], [[ID {1}]])
+d([[fitted from outside]], [[крепится снаружи]])
+d([[fitted from outside (the game removes items put on the character)]], [[крепится снаружи (игра удаляет предметы, надетые на персонажа)]])
+d([[layered fit]], [[многослойная посадка]])
+d([[rigid fit]], [[жёсткая посадка]])
+d([[rigid fit, joined by hand]], [[жёсткая посадка, соединено вручную]])
+d([[rigid fit, mesh did not load (blocked or removed on Roblox)]], [[жёсткая посадка, меш не загрузился (заблокирован или удалён в Roblox)]])
+d([[worn]], [[надето]])
+d([[Blocked mesh]], [[Меш заблокирован]])
+d([[Blocked mesh: rigid fit, mesh did not load (blocked or removed on Roblox)]], [[Меш заблокирован: жёсткая посадка, меш не загрузился (заблокирован или удалён в Roblox)]])
+d([[No weld]], [[Нет соединения]])
+d([[No weld: rigid fit, joined by hand]], [[Нет соединения: жёсткая посадка, соединено вручную]])
+d([[Killed at once]], [[Сразу удаляется]])
+r([[^(.-): fitted from outside %(the game removes items put on the character%)$]], [[{1}: крепится снаружи (игра удаляет предметы, надетые на персонажа)]])
+r([[^(.-): fitted from outside$]], [[{1}: крепится снаружи]])
+r([[^(.-): rigid fit$]], [[{1}: жёсткая посадка]])
+r([[^(.-): layered fit$]], [[{1}: многослойная посадка]])
+d([[Killed at once: the game removes it from the character - fitting it from outside]], [[Сразу удаляется: игра убирает его с персонажа — крепим снаружи]])
+d([[Detached now]], [[Теперь отдельно]])
+d([[Detached now: fitted from outside]], [[Теперь отдельно: крепится снаружи]])
+d([[Pinned to character]], [[Закреплено на персонаже]])
+d([[Paste an asset id or a catalog link]], [[Вставьте ID ассета или ссылку из каталога]])
+d([[Pick a player first (Refresh list)]], [[Сначала выберите игрока (обновите список)]])
+d([[Type a username or user id]], [[Введите ник или ID пользователя]])
+r([[^User not found: (.+)$]], [[Пользователь не найден: {1}]])
+r([[^Copy failed: (.+)$]], [[Не удалось скопировать: {t1}]])
+d([[could not load that avatar]], [[не удалось загрузить этот аватар]])
+d([[ApplyDescription is blocked here - try the Clone method]], [[ApplyDescription здесь заблокирован — попробуйте способ «Клон»]])
+d([[Clone needs a player that is in this server]], [[Для «Клона» нужен игрок, который находится на этом сервере]])
+d([[Your own look]], [[Ваш собственный облик]])
+r([[^Wearing: (.-) %((.-)%)$]], [[Надето: {1} ({t2})]])
+d([[clone]], [[клон]])
+d([[description]], [[описание аватара]])
+d([[(nobody else here)]], [[(здесь больше никого)]])
+d([[Korblox: Roblox did not load the real mesh - pick Bone leg]], [[Korblox: Roblox не загрузил настоящий меш — выберите «Костяная нога»]])
+d([[Korblox: bone leg (Roblox did not load the real mesh)]], [[Korblox: костяная нога (Roblox не загрузил настоящий меш)]])
+d([[Korblox: bone leg (built from parts)]], [[Korblox: костяная нога (собрана из деталей)]])
+d([[Korblox: loading the mesh...]], [[Korblox: загрузка меша...]])
+d([[Korblox: real mesh applied (community ids)]], [[Korblox: настоящий меш применён (ID сообщества)]])
+d([[Shirt]], [[Рубашка]])
+d([[T-Shirt]], [[Футболка]])
+d([[Pants]], [[Штаны]])
+d([[Face]], [[Лицо]])
+d([[Classic Shirts]], [[Классические рубашки]])
+d([[Classic T-Shirts]], [[Классические футболки]])
+d([[Classic Pants]], [[Классические штаны]])
+d([[Accessory]], [[Аксессуар]])
+d([[Relevance]], [[По релевантности]])
+d([[Most favorited]], [[Чаще всего в избранном]])
+d([[Newest]], [[Новые]])
+d([[Price: low to high]], [[Цена: по возрастанию]])
+d([[Price: high to low]], [[Цена: по убыванию]])
+d([[Free  (limited)]], [[Бесплатно  (лимитка)]])
+
+d([[Esc cancels  |  Backspace clears]], [[Esc отменяет  |  Backspace очищает]])
+d([[press a key...]], [[нажмите клавишу...]])
+d([[Executor keys]], [[Клавиши эксплойта]])
+d([[Game remote]], [[Ремот игры]])
+d([[Lock]], [[Закрепить]])
+d([[Locked]], [[Закреплено]])
+d([[Locked in place]], [[Закреплено на месте]])
+d([[Place on screen]], [[Поставить на экране]])
+d([[Reset]], [[Сброс]])
+d([[Reset all]], [[Сбросить всё]])
+d([[Reset panel]], [[Сбросить панель]])
+d([[Edit]], [[Правка]])
+d([[Press]], [[Нажатие]])
+d([[Switch mode]], [[Режим переключения]])
+d([[Pull]], [[Притягивание]])
+d([[Label]], [[Подпись]])
+d([[Button]], [[Кнопка]])
+d([[Dot]], [[Точка]])
+d([[Rounded]], [[Скруглённая]])
+d([[Right of crosshair]], [[Справа от прицела]])
+d([[Bottom Center]], [[Снизу по центру]])
+d([[Bottom center]], [[Снизу по центру]])
+d([[Top Center]], [[Сверху по центру]])
+d([[Top center]], [[Сверху по центру]])
+d([[Left Middle]], [[Слева посередине]])
+d([[Right Middle]], [[Справа посередине]])
+d([[Watermark]], [[Водяной знак]])
+d([[Show hidden skies]], [[Показать скрытые небеса]])
+d([[Boost]], [[Ускорение]])
+d([[Slow]], [[Замедление]])
+d([[Fly up]], [[Вверх (полёт)]])
+d([[Fly down]], [[Вниз (полёт)]])
+d([[BDC now]], [[BDC сейчас]])
+d([[Aim]], [[Наведение]])
+d([[Aimbot]], [[Аимбот]])
+d([[Adds a button on your screen that switches this function. Drag it to move it, lock it to keep it in place.]], [[Добавляет на экран кнопку, которая переключает эту функцию. Перетащите её, чтобы переместить, и закрепите, чтобы она не сдвигалась.]])
+d([[Telemetry off]], [[Телеметрия выключена]])
+d([[Disabled]], [[Отключено]])
+d([[FPS unlock]], [[Снятие ограничения FPS]])
+d([[Mobile all-round]], [[Телефон: универсальный]])
+d([[Game Default]], [[Как в игре]])
+d([[Graphics low]], [[Низкая графика]])
+d([[Network]], [[Сеть]])
+d([[Roblox Default]], [[Как в Roblox]])
+d([[Custom image]], [[Своя картинка]])
+d([[Ink drop]], [[Капля чернил]])
+d([[Scale]], [[Масштаб]])
+d([[Full]], [[Полная]])
+d([[Fade]], [[Затухание]])
+d([[Leave]], [[Оставить]])
+d([[Copy a side]], [[Копия стороны]])
+d([[Black]], [[Чёрный]])
+d([[Press Search to browse the catalog]], [[Нажмите «Поиск», чтобы открыть каталог]])
+r([[^Photo: (.+)$]], [[Фото: {1}]])
+r([[^loading  (%d+) / (%d+)$]], [[загрузка  {1} / {2}]])
+d([[loading...]], [[загрузка...]])
+d([[ready]], [[готово]])
+d([[Could not do that]], [[Не получилось]])
+d([[Players, NPCs]], [[Игроки, NPC]])
+d([[NPCs]], [[NPC]])
+d([[Winds]], [[Ветры]])
+
+d([[Afraid Vortex]], [[Вихрь Afraid]])
+d([[Angelic Pillar]], [[Ангельский столб]])
+d([[Anvil]], [[Наковальня]])
+d([[Ashen Storm]], [[Пепельная буря]])
+d([[Astrolabe]], [[Астролябия]])
+d([[Aurora]], [[Северное сияние]])
+d([[Aurora Veil]], [[Вуаль сияния]])
+d([[Bell]], [[Колокол]])
+d([[Berserk Eclipse]], [[Затмение берсерка]])
+d([[Berserker Flame]], [[Пламя берсерка]])
+d([[Big Flakes]], [[Крупные хлопья]])
+d([[Blades]], [[Клинки]])
+d([[Blood Eclipse]], [[Кровавое затмение]])
+d([[Blood Mist]], [[Кровавый туман]])
+d([[Blood Moon]], [[Кровавая луна]])
+d([[Blood Rage]], [[Кровавая ярость]])
+d([[Blood Rain]], [[Кровавый дождь]])
+d([[Blue Fire]], [[Синий огонь]])
+d([[Bokeh]], [[Боке]])
+d([[Brackets]], [[Скобки]])
+d([[Bubbles]], [[Пузыри]])
+d([[Butterflies]], [[Бабочки]])
+d([[Chaos]], [[Хаос]])
+d([[Chest]], [[Грудь]])
+d([[Chrome]], [[Хром]])
+d([[Circuit Wings]], [[Крылья-схема]])
+d([[Coin]], [[Монета]])
+d([[Comet]], [[Комета]])
+d([[Crescents]], [[Полумесяцы]])
+d([[Crit]], [[Крит]])
+d([[Crystals]], [[Кристаллы]])
+d([[Cyber Grid]], [[Кибер-сетка]])
+d([[Cyberpunk]], [[Киберпанк]])
+d([[Dandelion]], [[Одуванчик]])
+d([[Dark Ritual]], [[Тёмный ритуал]])
+d([[Dawn]], [[Рассвет]])
+d([[Day]], [[День]])
+d([[Dead Star]], [[Мёртвая звезда]])
+d([[Diamond]], [[Алмаз]])
+d([[Disintegrate]], [[Распад]])
+d([[Dragon Breath]], [[Дыхание дракона]])
+d([[Dreamy]], [[Мечтательный]])
+d([[Drifter]], [[Скиталец]])
+d([[Dusk]], [[Сумерки]])
+d([[Earth]], [[Земля]])
+d([[Eclipse]], [[Затмение]])
+d([[Embers]], [[Угли]])
+d([[Feathers]], [[Перья]])
+d([[Fire]], [[Огонь]])
+d([[Floor Sigil]], [[Знак на полу]])
+d([[Flower of Life]], [[Цветок жизни]])
+d([[Frost]], [[Иней]])
+d([[Frost Night]], [[Морозная ночь]])
+d([[Frost Queen]], [[Ледяная королева]])
+d([[Frostbite]], [[Мороз]])
+d([[Frozen Bloom]], [[Замёрзший цветок]])
+d([[Galaxy]], [[Галактика]])
+d([[Galaxy Swirl]], [[Галактический вихрь]])
+d([[Ghost]], [[Призрак]])
+d([[Ghost Flame]], [[Призрачное пламя]])
+d([[Gold]], [[Золото]])
+d([[Gold Fire]], [[Золотой огонь]])
+d([[Golden Radiance]], [[Золотое сияние]])
+d([[Gyro]], [[Гироскоп]])
+d([[Gyro Rings]], [[Гиро-кольца]])
+d([[Halo]], [[Нимб]])
+d([[Heart]], [[Сердце]])
+d([[Hearts]], [[Сердца]])
+d([[Heavy]], [[Тяжёлый]])
+d([[Helix]], [[Спираль]])
+d([[Hellfire]], [[Адское пламя]])
+d([[Hex]], [[Гекс]])
+d([[Holo Angel Wings]], [[Голо-крылья ангела]])
+d([[Holo Angelic]], [[Голо-ангел]])
+d([[Holo Beam Wings]], [[Голо-крылья из лучей]])
+d([[Holo Crown]], [[Голо-корона]])
+d([[Holo Cyber]], [[Голо-кибер]])
+d([[Holo Demon]], [[Голо-демон]])
+d([[Holo Demon Wings]], [[Голо-крылья демона]])
+d([[Holo Full]], [[Голо-полный образ]])
+d([[Holo Halo]], [[Голо-нимб]])
+d([[Holo Horns]], [[Голо-рога]])
+d([[Holo Seraph]], [[Голо-серафим]])
+d([[Hologram]], [[Голограмма]])
+d([[Ice]], [[Лёд]])
+d([[Jade]], [[Нефрит]])
+d([[Lava]], [[Лава]])
+d([[Leaves]], [[Листья]])
+d([[Light Shafts]], [[Лучи света]])
+d([[Lightning Strike]], [[Удар молнии]])
+d([[Magic Circle]], [[Магический круг]])
+d([[Magic Rain]], [[Магический дождь]])
+d([[Mars]], [[Марс]])
+d([[Metatron]], [[Куб Метатрона]])
+d([[Meteors]], [[Метеоры]])
+d([[Mist]], [[Дымка]])
+d([[Moon Night]], [[Лунная ночь]])
+d([[Motes]], [[Пылинки]])
+d([[Mystic Twilight]], [[Мистические сумерки]])
+d([[Night Vision]], [[Ночное видение]])
+d([[Noir]], [[Нуар]])
+d([[Ocean Tide]], [[Океанский прилив]])
+d([[Octagram]], [[Октаграмма]])
+d([[Orbit Shards]], [[Орбитальные осколки]])
+d([[Orbits]], [[Орбиты]])
+d([[Orbs]], [[Шары]])
+d([[Pearl]], [[Жемчуг]])
+d([[Petals]], [[Лепестки]])
+d([[Phoenix Fire]], [[Огонь феникса]])
+d([[Rain]], [[Дождь]])
+d([[Ribbon]], [[Лента]])
+d([[Rings]], [[Кольца]])
+d([[Rose Garden]], [[Розовый сад]])
+d([[Rune Wheel]], [[Колесо рун]])
+d([[Runes]], [[Руны]])
+d([[Sakura]], [[Сакура]])
+d([[Sakura Burst]], [[Взрыв сакуры]])
+d([[Sakura Fire]], [[Огонь сакуры]])
+d([[Sakura Night]], [[Ночь сакуры]])
+d([[Sakura Storm]], [[Буря сакуры]])
+d([[Scan Ring]], [[Кольцо сканера]])
+d([[Sepia]], [[Сепия]])
+d([[Shadow]], [[Тень]])
+d([[Shadow Realm]], [[Царство теней]])
+d([[Shatter]], [[Раскол]])
+d([[Shooting Stars]], [[Падающие звёзды]])
+d([[Slash X]], [[Крестовый удар]])
+d([[Snow]], [[Снег]])
+d([[Soul Ascend]], [[Вознесение души]])
+d([[Soul Fire]], [[Огонь души]])
+d([[Soul Harvest]], [[Жатва душ]])
+d([[Soul Reaper]], [[Жнец душ]])
+d([[Souls]], [[Души]])
+d([[Sparkle]], [[Искорка]])
+d([[Sparkles]], [[Искры]])
+d([[Spirit Lanterns]], [[Фонари духов]])
+d([[Spores]], [[Споры]])
+d([[Star]], [[Звезда]])
+d([[Star Fall]], [[Звездопад]])
+d([[Static]], [[Статика]])
+d([[Storm]], [[Буря]])
+d([[Supernova]], [[Сверхновая]])
+d([[Sword]], [[Меч]])
+d([[Thump]], [[Глухой удар]])
+d([[Thunder God]], [[Бог грома]])
+d([[Totem]], [[Тотем]])
+d([[Toxic]], [[Токсичный]])
+d([[Toxic Miasma]], [[Токсичные миазмы]])
+d([[Twinkle Field]], [[Мерцающее поле]])
+d([[VOID GUARD]], [[СТРАЖ БЕЗДНЫ]])
+d([[Vintage]], [[Винтаж]])
+d([[Void]], [[Бездна]])
+d([[Void Ash]], [[Пепел бездны]])
+d([[Void Rift]], [[Разлом бездны]])
+d([[Vortex]], [[Вихрь]])
+d([[Water Vortex]], [[Водяной вихрь]])
+d([[Wisps]], [[Огоньки]])
+d([[Zero]], [[Ноль]])
+d([[Gloom]], [[Мрак]])
+d([[Pixel]], [[Пиксельные]])
+d([[Spark]], [[Искра]])
+
+r([[^(.+), (.+)$]], function(c, tr)
+    local a, b = tr(c[1]), tr(c[2])
+    if a ~= c[1] and b ~= c[2] then return a .. ", " .. b end
+    return nil
+end)
+
+d([[About]], [[О программе]])
+d([[Anti AFK]], [[Анти-АФК]])
+d([[Auto rejoin]], [[Авто-перезаход]])
+d([[Box style]], [[Стиль рамки]])
+d([[Boxes]], [[Рамки]])
+d([[Chams]], [[Подсветка моделей (Chams)]])
+d([[Custom text]], [[Свой текст]])
+d([[Delay]], [[Задержка]])
+d([[Duration]], [[Длительность]])
+d([[Enable notifications]], [[Включить уведомления]])
+d([[Head only]], [[Только голова]])
+d([[Health bars]], [[Полоски здоровья]])
+d([[Hit feedback]], [[Отклик на попадание]])
+d([[Marker colour]], [[Цвет маркера]])
+d([[Marker style]], [[Стиль маркера]])
+d([[Names]], [[Имена]])
+d([[Online]], [[В сети]])
+d([[Rejoin]], [[Перезайти]])
+d([[Remove fog]], [[Убрать туман]])
+d([[Server hop]], [[Сменить сервер]])
+d([[Test notification]], [[Проверить уведомление]])
+d([[Time of day]], [[Время суток]])
+d([[Triggerbot]], [[Триггербот]])
+d([[Unload menu]], [[Выгрузить меню]])
+d([[Utility]], [[Утилиты]])
+d([[Visible only]], [[Только видимые]])
+d([[decal / image id]], [[ID декали или картинки]])
+d([[type something]], [[введите текст]])
+d([[Right-click the name of any switch to bind a key to it. Everything on this page is a placeholder: wire your own functions to the controls.]], [[Нажмите правой кнопкой на название любого выключателя, чтобы назначить клавишу. Всё на этой странице — заготовки: подключите свои функции к элементам.]])
+r([[^AFRAID SIDE ready  |  (.+) or the logo button toggles the menu$]], [[AFRAID SIDE готов  |  {1} или кнопка с логотипом открывает меню]])
+end
+do
+UIX.LANG.start()
+end
 UITab, UITabs, UISelectTab = UIX.Tab, UIX.tabs, UIX.selectTab
 UI.gui = UIX.gui
 end
@@ -23278,6 +25318,42 @@ local function celestial(sky)
     end)
 end
 
+local FACE_KEYS = { "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp" }
+local FACE_NAME = { SkyboxBk = "Back", SkyboxDn = "Down", SkyboxFt = "Front", SkyboxLf = "Left", SkyboxRt = "Right", SkyboxUp = "Up" }
+local SIDE_KEYS = { "SkyboxFt", "SkyboxRt", "SkyboxBk", "SkyboxLf" }
+W.FILL_MODES = { "Auto", "Black", "Copy a side", "Leave" }
+W.skyAudit = {}
+local function faceCustom(v)
+    v = tostring(v or "")
+    if v == "" then return false end
+    if string.sub(string.lower(v), 1, 11) == "rbxasset://" then return false end
+    return true
+end
+local function auditSky(sky)
+    local a = { custom = 0, missing = {}, orig = {} }
+    for _, k in ipairs(FACE_KEYS) do
+        local ok, v = pcall(function() return sky[k] end)
+        v = ok and tostring(v or "") or ""
+        a.orig[k] = v
+        if faceCustom(v) then a.custom = a.custom + 1 else a.missing[#a.missing + 1] = k end
+    end
+    for _, k in ipairs(SIDE_KEYS) do
+        if faceCustom(a.orig[k]) then a.pick = a.orig[k]; break end
+    end
+    if not a.pick then
+        for _, k in ipairs(FACE_KEYS) do
+            if faceCustom(a.orig[k]) then a.pick = a.orig[k]; break end
+        end
+    end
+    return a
+end
+
+local function missingText(aud)
+    local t = {}
+    for _, k in ipairs(aud.missing) do t[#t + 1] = FACE_NAME[k] end
+    return table.concat(t, ", ")
+end
+
 local function fetchSky(id)
     local objs
     local ok, r = pcall(function() return game:GetObjects("rbxassetid://" .. tostring(id)) end)
@@ -23305,7 +25381,12 @@ local function fetchSky(id)
         if o ~= sky then pcall(function() o:Destroy() end) end
     end
     for _, c in ipairs(sky:GetChildren()) do pcall(function() c:Destroy() end) end
-    return sky
+    local aud = auditSky(sky)
+    if aud.custom == 0 then
+        pcall(function() sky:Destroy() end)
+        return nil, "this model has no sky pictures"
+    end
+    return sky, nil, aud
 end
 
 local function loadSkyAsync(name, id, quiet)
@@ -23314,11 +25395,12 @@ local function loadSkyAsync(name, id, quiet)
     W.loading[name] = os.clock()
     W.loadFail[name] = nil
     task.spawn(function()
-        local sky, err = fetchSky(id)
+        local sky, err, aud = fetchSky(id)
         W.loading[name] = nil
         if sky then
             if W.skyCache[name] then pcall(function() W.skyCache[name]:Destroy() end) end
             W.skyCache[name] = sky
+            W.skyAudit[name] = aud
             if not quiet and cfg.skybox == name then notify("Sky loaded: " .. name) end
             dirty.world = true
         else
@@ -23328,6 +25410,54 @@ local function loadSkyAsync(name, id, quiet)
         end
     end)
 end
+
+W.skyNoteText = ""
+local function setSkyNote(t)
+    W.skyNoteText = t
+    if W.onSkyNote then pcall(W.onSkyNote, t) end
+end
+
+local function fillMode(name)
+    local m = cfg.skyFill
+    if m == "Auto" or not m then
+        local look = SKY_LOOK[name]
+        return (look == "Day" or look == "Dawn" or look == "Dusk") and "Copy a side" or "Black"
+    end
+    return m
+end
+
+local function fillFaces(inst, name)
+    local aud = W.skyAudit[name]
+    if not inst or not aud then return end
+    local mode = fillMode(name)
+    for _, k in ipairs(aud.missing) do
+        local v = ""
+        if mode == "Leave" then v = aud.orig[k] or ""
+        elseif mode == "Copy a side" then v = aud.pick or "" end
+        pcall(function() inst[k] = v end)
+    end
+end
+
+local function noteSky(name)
+    local aud = W.skyAudit[name]
+    if not aud then
+        setSkyNote("")
+        return
+    end
+    if #aud.missing == 0 then
+        setSkyNote("All 6 sky pictures are there.")
+        return
+    end
+    local mode = fillMode(name)
+    local how = (mode == "Black") and "black" or ((mode == "Copy a side") and "a copy of a side picture" or "left as they were")
+    local t = "This sky has no own picture for: " .. missingText(aud) .. ". Without a fix the engine shows its default sky there, which looks like a cube. Now: " .. how .. "."
+    setSkyNote(t)
+    if W.skyTold[name] ~= mode and mode ~= "Leave" then
+        W.skyTold[name] = mode
+        notify(name .. ": missing " .. missingText(aud) .. " picture - filled with " .. how, 5)
+    end
+end
+W.skyTold = {}
 
 local function dropSkyInst()
     if W.sky.inst then pcall(function() W.sky.inst:Destroy() end) end
@@ -23347,10 +25477,13 @@ local function swapSky(name)
             for _, f in ipairs({ "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp" }) do pcall(function() s[f] = "" end) end
         end
         s.Name = TAG .. "sky"
+        fillFaces(s, name)
         s.Parent = Lighting
         W.sky.inst = s
         celestial(s)
+        noteSky(name)
     end
+    if name == "Game Default" or name == "Roblox Default" or PROC_SKY[name] then setSkyNote("") end
     W.sky.shown = name
     return true
 end
@@ -23405,7 +25538,13 @@ local function stepSky(dt)
             end
             return true
         end
-        if S.inst and dirty.world then celestial(S.inst) end
+        if S.inst and dirty.world then
+            celestial(S.inst)
+            if S.shown == cfg.skybox then
+                fillFaces(S.inst, S.shown)
+                noteSky(S.shown)
+            end
+        end
         return false
     elseif S.phase == "out" then
         S.t = S.t + dt
@@ -23529,19 +25668,86 @@ function W.onSkyPicked(name)
     mark("world")
 end
 
+W.hidden = {}
+do
+    local h = UIX.PREFS and UIX.PREFS.get("hiddenSkies", nil)
+    if type(h) == "table" then
+        for name, v in pairs(h) do
+            if v == true and SKY_ID[name] then W.hidden[name] = true end
+        end
+    end
+end
+
+function W.hiddenCount()
+    local n = 0
+    for _ in pairs(W.hidden) do n = n + 1 end
+    return n
+end
+
+function W.skyOptions()
+    local out = {}
+    for _, n in ipairs(SKY_OPTIONS) do
+        if not W.hidden[n] or n == cfg.skybox then out[#out + 1] = n end
+    end
+    return out
+end
+
+function W.refreshSkyOptions()
+    if Flags.skybox and Flags.skybox.SetOptions then Flags.skybox:SetOptions(W.skyOptions()) end
+    if W.onHiddenCount then pcall(W.onHiddenCount, W.hiddenCount()) end
+end
+
+local function saveHidden()
+    local copy = {}
+    for k, v in pairs(W.hidden) do copy[k] = v end
+    if UIX.PREFS then UIX.PREFS.set("hiddenSkies", copy) end
+end
+
 function W.nextSky()
+    local list = SKY_OPTIONS
     local i = 0
-    for n, name in ipairs(SKY_OPTIONS) do if name == cfg.skybox then i = n end end
-    local nxt = SKY_OPTIONS[(i % #SKY_OPTIONS) + 1]
-    if nxt == "Game Default" or nxt == "Roblox Default" then nxt = SKY_OPTIONS[3] end
-    if Flags.skybox then Flags.skybox:Set(nxt, true) end
-    W.onSkyPicked(nxt)
+    for n, name in ipairs(list) do if name == cfg.skybox then i = n end end
+    for step = 1, #list do
+        local cand = list[((i + step - 1) % #list) + 1]
+        if cand ~= "Game Default" and cand ~= "Roblox Default" and not W.hidden[cand] then
+            if Flags.skybox then Flags.skybox:Set(cand, true) end
+            W.onSkyPicked(cand)
+            return
+        end
+    end
 end
 
 function W.randomSky()
-    local e = SKY_LIST[math.random(1, #SKY_LIST)]
+    local pool = {}
+    for _, e in ipairs(SKY_LIST) do
+        if not W.hidden[e[1]] then pool[#pool + 1] = e end
+    end
+    if #pool == 0 then return end
+    local e = pool[math.random(1, #pool)]
     if Flags.skybox then Flags.skybox:Set(e[1], true) end
     W.onSkyPicked(e[1])
+end
+
+function W.hideSky(name)
+    name = name or cfg.skybox
+    if not SKY_ID[name] then
+        notify("Only the skies from the list can be hidden", 3)
+        return false
+    end
+    W.hidden[name] = true
+    saveHidden()
+    W.nextSky()
+    W.refreshSkyOptions()
+    notify("Hidden: " .. name .. ". The button 'Show hidden skies' brings it back.", 4)
+    return true
+end
+
+function W.restoreHidden()
+    local n = W.hiddenCount()
+    W.hidden = {}
+    saveHidden()
+    W.refreshSkyOptions()
+    notify(n > 0 and (n .. " hidden skies are back in the list") or "No sky is hidden", 3)
 end
 
 function W.loadCustom(text)
@@ -23551,7 +25757,7 @@ function W.loadCustom(text)
     if not SKY_ID[name] then
         SKY_ID[name] = id
         SKY_OPTIONS[#SKY_OPTIONS + 1] = name
-        if Flags.skybox then Flags.skybox:SetOptions(SKY_OPTIONS) end
+        W.refreshSkyOptions()
     end
     if W.skyCache[name] then
         if Flags.skybox then Flags.skybox:Set(name, true) end
@@ -23560,9 +25766,10 @@ function W.loadCustom(text)
     end
     notify("Loading " .. id .. " ...", 2)
     task.spawn(function()
-        local sky, err = fetchSky(id)
+        local sky, err, aud = fetchSky(id)
         if sky then
             W.skyCache[name] = sky
+            W.skyAudit[name] = aud
             if Flags.skybox then Flags.skybox:Set(name, true) end
             W.onSkyPicked(name)
             notify("Sky loaded: " .. name)
@@ -23575,18 +25782,22 @@ end
 function W.checkAll()
     notify("Checking " .. #SKY_LIST .. " skies...", 3)
     task.spawn(function()
-        local okN, bad = 0, {}
+        local okN, bad, partial = 0, {}, {}
         for _, e in ipairs(SKY_LIST) do
             if not W.skyCache[e[1]] then
-                local sky = fetchSky(e[2])
-                if sky then W.skyCache[e[1]] = sky; okN = okN + 1 else bad[#bad + 1] = e[1] end
+                local sky, _, aud = fetchSky(e[2])
+                if sky then W.skyCache[e[1]] = sky; W.skyAudit[e[1]] = aud; okN = okN + 1 else bad[#bad + 1] = e[1] end
             else
                 okN = okN + 1
             end
+            local aud = W.skyAudit[e[1]]
+            if aud and #aud.missing > 0 then partial[#partial + 1] = e[1] .. " (" .. missingText(aud) .. ")" end
             task.wait(0.12)
         end
+        W.partialSkies = partial
         notify(("Skies OK: %d / %d"):format(okN, #SKY_LIST), 5)
         if #bad > 0 then notify("Failed: " .. table.concat(bad, ", "):sub(1, 90), 6) end
+        if #partial > 0 then notify(#partial .. " skies lack a picture and are filled by 'Missing sky pictures': " .. table.concat(partial, ", "):sub(1, 110), 8) end
     end)
 end
 
@@ -29568,6 +31779,8 @@ do
 do
 local lerpn, Fl, dFl, wingState, rig = H.lerpn, H.flapF, H.flapDF, H.wingState, H.wingRig
 local c01, cl = H.c01, H.cl
+local BVANE = { { 0, -0.38 }, { 0.8, -0.5 }, { 1.0, -0.02, 1 }, { 0.72, 0.5 }, { 0, 0.4 } }
+local LIGHT_GROUPS = { { col = "b", mat = "ed", tr = 0.04 }, { col = "a", mat = "ff", tr = 0.5 }, { col = "w", mat = "ff", tr = 0.35 }, { col = "w", mat = "g", tr = 0.04 } }
 
 local function E(t)
     t.life = t.life or { 1.2, 2 }
@@ -29578,7 +31791,7 @@ end
 local PIX = function(c1, c2, c3, rate) return E({ tex = "hex", rate = rate or 7, life = { 1.3, 2.3 }, speed = { 0.3, 1.1 }, acc = { 0, 0.9, 0 }, size = { 0.2, 0.26, 0.02 }, tr = 0.08,
     rot = { 0, 0 }, rs = { 0, 0 }, col = { c1, c2, c3 }, main = true }) end
 local TWINKLE = function(c1, c2, rate) return E({ tex = "twinkle", rate = rate or 4, life = { 0.8, 1.5 }, speed = { 0.05, 0.3 }, size = { 0, 0.36, 0 }, pk = 0.4, tr = 0.05, col = { c1, c2 } }) end
-local SOFT = function(c1, c2, rate) return E({ tex = "glow", rate = rate or 1.2, life = { 2, 3 }, speed = { 0.1, 0.4 }, acc = { 0, 0.3, 0 }, size = { 1.5, 2.2, 2.8 }, tr = 0.88, col = { c1, c2 } }) end
+local SOFT = function(c1, c2, rate) return E({ tex = "glow", rate = rate or 1.2, life = { 2, 3 }, speed = { 0.1, 0.4 }, acc = { 0, 0.3, 0 }, size = { 0.7, 1.0, 1.3 }, tr = 0.9, col = { c1, c2 } }) end
 local STREAK = function(c1, c2, rate) return E({ tex = "streak", rate = rate or 3, life = { 0.25, 0.5 }, speed = { 3, 5 }, acc = { 0, -3, 0 }, size = { 0.1, 0.5, 0 }, tr = 0.1, orient = true, col = { c1, c2 } }) end
 
 local function featherList(pts, r, side, k, sel, off)
@@ -29628,7 +31841,6 @@ local function handGroup(b, P, side, o, gi, ng)
 end
 
 local ANGEL = { k = 0.86, yawR = 0.5, yawO = 0.3, tiltR = 0.24, tiltO = 0.1, rollR = 0.16, rollO = -0.02, yawF = 0.34, tiltF = -0.62, rollF = -0.1 }
-local ANGEL_TR = { under = 0.66, flight = 0.5, cover = 0.4, lesser = 0.3 }
 
 local function angelWing(b, side)
     local o = {}
@@ -29638,21 +31850,43 @@ local function angelWing(b, side)
     local el, wr = ARM[2] * k, ARM[3] * k
     local E = H.wingJoint(b, B, el, side, o, { fold = 0.5, amp = 0.26, lag = 0.42, flex = 0.2, bias = -0.04, ruf = 0.2, shrug = 0.14 })
     local P = H.wingJoint(b, E, wr - el, side, o, { fold = 0.62, amp = 0.5, lag = 0.95, flex = 0.32, bias = -0.05, ruf = 0.45, shrug = 0.24 })
-    local cols = { under = "d", flight = "a", cover = "w", lesser = "e" }
-    local function layer(pivot, list, key)
-        if #list > 0 then H.featherLayer(b, { of = pivot, feathers = list, side = side, col = cols[key], mat = "ff", tr = ANGEL_TR[key] }) end
-    end
-    for _, r in ipairs(ARM_ROWS) do
-        layer(B, featherList(ARM, r, side, k, function(f, u) return u < 0.5 end), r.key)
-        layer(E, featherList(ARM, r, side, k, function(f, u) return u >= 0.5 end, ARM[2]), r.key)
-    end
-    local ng = 3
-    for g = 1, ng do
-        local piv = handGroup(b, P, side, o, g, ng)
-        for _, r in ipairs(HAND_ROWS) do
-            layer(piv, featherList(HAND, r, side, k, function(f, u) return math.min(ng, math.floor(f * ng) + 1) == g end), r.key)
+    local OPS = {}
+    local function opsOf(pivot) local o = OPS[pivot]; if not o then o = {}; OPS[pivot] = o end return o end
+    local function light(pivot, list, key)
+        local ops = opsOf(pivot)
+        local vg = (key == "cover" or key == "lesser") and 3 or 2
+        for fi, f in ipairs(list) do
+            local ox, oy, oz, ang, len, w, bend, droop = f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[13] or 0
+            local ca, sa = cos(rad(ang)), sin(rad(ang))
+            local pts = {}
+            for q, u in ipairs({ 0.02, 0.36, 0.7, 1.0 }) do
+                local lx, ly = u * len, -bend * len * u * u
+                pts[q] = { ox + ca * lx - sa * ly, oy + sa * lx + ca * ly, oz - side * droop * len * u * u }
+            end
+            ops[#ops + 1] = { k = "tube", g = 1, pts = pts, r0 = 0.03 + 0.03 * w, r1 = 0.007, sides = 5, seg = 2, caps = 1 }
+            ops[#ops + 1] = { k = "plate", g = vg, pts = BVANE, th = 0.025, bev = 0.008, seg = 1, dome = 0.01, s = { len, w * 0.95, 1 }, r = { 0, 0, ang - math.deg(math.atan(bend)) }, p = { ox, oy, oz + side * 0.02 } }
+            if (key == "flight" or key == "under") and fi % 2 == 1 then ops[#ops + 1] = { k = "orb", g = 4, s = 0.06, p = pts[4] } end
         end
     end
+    for _, r in ipairs(ARM_ROWS) do
+        light(B, featherList(ARM, r, side, k, function(f, u) return u < 0.5 end), r.key)
+        light(E, featherList(ARM, r, side, k, function(f, u) return u >= 0.5 end, ARM[2]), r.key)
+    end
+    local ng = 3
+    local fans = {}
+    for g = 1, ng do
+        local piv = handGroup(b, P, side, o, g, ng)
+        fans[g] = piv
+        for _, r in ipairs(HAND_ROWS) do
+            light(piv, featherList(HAND, r, side, k, function(f, u) return math.min(ng, math.floor(f * ng) + 1) == g end), r.key)
+        end
+    end
+    local function emit(pivot)
+        local ops = OPS[pivot]
+        if ops and #ops > 0 then H.asm(b, { of = pivot, name = "hangel", ops = ops, bound = V3(10, 10, 2), groups = LIGHT_GROUPS }) end
+    end
+    emit(B); emit(E)
+    for g = 1, ng do emit(fans[g]) end
     local function line(pts, off, z)
         local out = {}
         for i, p in ipairs(pts) do out[i] = V3((p.X - (off and off.X or 0)) * k, (p.Y - (off and off.Y or 0)) * k + z.dy * k, side * z.z * k) end
@@ -29662,9 +31896,9 @@ local function angelWing(b, side)
     local function seg3(a, c) return { a, mid(a, c), c } end
     local pad = { dy = 0.03, z = 0.2 }
     local bone = { dy = 0.07, z = 0.3 }
-    H.tube(b, { of = B, pts = line(seg3(ARM[1], ARM[2]), nil, pad), r0 = 0.2 * k, r1 = 0.18 * k, sides = 10, swell = 0.12, col = "e", mat = "ff", tr = 0.3, ey = 0.8 })
-    H.tube(b, { of = E, pts = line(seg3(ARM[2], ARM[3]), ARM[2], pad), r0 = 0.18 * k, r1 = 0.16 * k, sides = 10, swell = 0.1, col = "e", mat = "ff", tr = 0.3, ey = 0.8 })
-    H.tube(b, { of = P, pts = line(HAND, nil, pad), r0 = 0.16 * k, r1 = 0.07 * k, sides = 10, p = 0.8, col = "e", mat = "ff", tr = 0.3, ey = 0.8 })
+    H.tube(b, { of = B, pts = line(seg3(ARM[1], ARM[2]), nil, pad), r0 = 0.2 * k, r1 = 0.18 * k, sides = 10, swell = 0.12, col = "e", mat = "ff", tr = 0.4, ey = 0.8 })
+    H.tube(b, { of = E, pts = line(seg3(ARM[2], ARM[3]), ARM[2], pad), r0 = 0.18 * k, r1 = 0.16 * k, sides = 10, swell = 0.1, col = "e", mat = "ff", tr = 0.4, ey = 0.8 })
+    H.tube(b, { of = P, pts = line(HAND, nil, pad), r0 = 0.16 * k, r1 = 0.07 * k, sides = 10, p = 0.8, col = "e", mat = "ff", tr = 0.4, ey = 0.8 })
     H.tube(b, { of = B, pts = line(seg3(ARM[1], ARM[2]), nil, bone), r0 = 0.052 * k, r1 = 0.048 * k, sides = 8, col = "b", mat = "ed", tr = 0.04 })
     H.tube(b, { of = E, pts = line(seg3(ARM[2], ARM[3]), ARM[2], bone), r0 = 0.048 * k, r1 = 0.045 * k, sides = 8, col = "b", mat = "ed", tr = 0.04 })
     H.tube(b, { of = P, pts = line(HAND, nil, bone), r0 = 0.045 * k, r1 = 0.03 * k, sides = 8, col = "b", mat = "ed", tr = 0.04 })
@@ -29692,7 +31926,7 @@ end
 def("Holo Angel Wings", "Back", pal(C3(120, 226, 255), C3(236, 252, 255), C3(204, 244, 255), C3(52, 132, 224), C3(170, 240, 255), C3(170, 205, 255), C3(40, 90, 190), C3(90, 190, 255)), function(b)
     for _, side in ipairs({ -1, 1 }) do
         local A = b.mesh and angelWing(b, side) or angelWingPlain(b, side)
-        H.fx(b, { of = A, cf = CF(2.0, -0.7, 1.0), size = V3(3.6, 4.8, 1.8), fx = { PIX("w", "a", "a", 7), TWINKLE("w", "b", 3.5), SOFT("a", "d", 1.1) } })
+        H.fx(b, { of = A, cf = CF(2.4, -0.7, 1.0), size = V3(3.4, 4.8, 1.8), fx = { PIX("w", "a", "a", 7), TWINKLE("w", "b", 3.5), SOFT("a", "d", 1.1) } })
     end
 end)
 
@@ -29864,6 +32098,86 @@ def("Circuit Wings", "Back", pal(C3(60, 255, 214), C3(220, 255, 250), C3(190, 25
             end
         end
         H.fx(b, { of = A, cf = CF(1.9, -0.4, 0.1), size = V3(3.2, 3.8, 0.3), fx = { PIX("b", "w", "b", 9), STREAK("w", "b", 3), E({ tex = "spark", rate = 4, life = { 0.3, 0.7 }, speed = { 1.5, 3 }, size = { 0.12, 0.16, 0 }, tr = 0.05, col = { "w", "b" } }) } })
+    end
+end)
+local BEAM_N, BEAM_L, BEAM_NG = 9, 4.7, 3
+local BEAM_GROUPS = { { col = "b", mat = "ed", tr = 0.05 }, { col = "a", mat = "ff", tr = 0.66 }, { col = "w", mat = "g", tr = 0.04 }, { col = "d", mat = "ff", tr = 0.42 } }
+local function beamLen(f) return math.max(0.42, 1 - 1.05 * (f - 0.22) ^ 2) end
+local function beamLines(gi)
+    local list = {}
+    for layer = 1, 2 do
+        local n = (layer == 1) and BEAM_N or BEAM_N - 1
+        for i = 1, n do
+            local f = (i - 1) / (BEAM_N - 1)
+            if layer == 2 then f = (i - 0.5) / (BEAM_N - 1) end
+            if math.min(BEAM_NG, math.floor(f * BEAM_NG) + 1) == gi then
+                local a = -16 + f * 92
+                local L = BEAM_L * beamLen(f) * ((layer == 1) and 1 or 0.64)
+                list[#list + 1] = { layer = layer, i = i, f = f, a = a, L = L }
+            end
+        end
+    end
+    return list
+end
+local function beamPt(l, u, z)
+    local ca, sa = cos(rad(l.a)), sin(rad(l.a))
+    local bx, by = u * l.L, 0.05 * l.L * u * u
+    return V3(ca * bx - sa * by, sa * bx + ca * by, z)
+end
+local function beamOps(sd, gi)
+    local o = {}
+    for _, l in ipairs(beamLines(gi)) do
+        local z = ((l.layer == 1) and (0.03 * (l.i % 2)) or 0.1) * sd
+        local pts = {}
+        for k, u in ipairs({ 0.07, 0.38, 0.68, 1 }) do local q = beamPt(l, u, z); pts[k] = { q.X, q.Y, q.Z } end
+        if l.layer == 1 then
+            o[#o + 1] = { k = "tube", g = 1, pts = pts, r0 = 0.042, r1 = 0.012, sides = 6, seg = 3, caps = 1 }
+            o[#o + 1] = { k = "plate", g = 2, pts = BVANE, th = 0.03, bev = 0.01, seg = 2, dome = 0.02, s = { l.L * 0.97, 0.78, 1 }, r = { 0, 0, l.a }, p = { 0, 0, -0.06 * sd } }
+            o[#o + 1] = { k = "orb", g = 3, s = 0.085, p = pts[4] }
+            if l.i % 2 == 1 then
+                o[#o + 1] = { k = "orb", g = 3, s = 0.045, p = pts[2] }
+                o[#o + 1] = { k = "orb", g = 3, s = 0.045, p = pts[3] }
+            end
+        else
+            o[#o + 1] = { k = "tube", g = 4, pts = pts, r0 = 0.1, r1 = 0.02, sides = 6, seg = 3, caps = 1 }
+            o[#o + 1] = { k = "orb", g = 3, s = 0.06, p = pts[4] }
+        end
+    end
+    if gi == 1 then o[#o + 1] = { k = "orb", g = 3, s = 0.24, p = { 0, 0, 0.04 * sd } } end
+    return o
+end
+local BEAM = { [1] = {}, [-1] = {} }
+for _, sd in ipairs({ -1, 1 }) do for gi = 1, BEAM_NG do BEAM[sd][gi] = beamOps(sd, gi) end end
+
+local function beamFan(b, side, B, gi)
+    local tg = (BEAM_NG == 1) and 0.5 or (gi - 1) / (BEAM_NG - 1)
+    local lagS = side < 0 and 0.09 or 0
+    return b.pivot({ of = B, anim = function(t, st)
+        local w = wingState(st, t)
+        local d = dFl(w.ph + lagS - 0.9 - 0.35 * tg)
+        local tors = side * cl(0.07 * w.A * w.w * d, -0.5, 0.5) * (0.3 + 0.7 * tg)
+        local spread = tg * (-0.5 * (1 - w.sp) + 0.14 * w.fly + 0.1 * w.str - 0.2 * c01(d) * c01(w.A / 0.3) * w.fly + 0.14 * w.ruf) + 0.03 * sin(t * 1.3 + gi * 1.7 + side)
+        return ANG(tors, 0, spread)
+    end })
+end
+
+def("Holo Beam Wings", "Back", pal(C3(110, 200, 255), C3(196, 246, 255), C3(238, 252, 255), C3(96, 130, 255), C3(150, 220, 255), C3(196, 164, 255), C3(60, 90, 220), C3(130, 210, 255)), function(b)
+    for _, side in ipairs({ -1, 1 }) do
+        local A, B = rig(b, side, ANGEL)
+        for gi = 1, BEAM_NG do
+            local piv = beamFan(b, side, B, gi)
+            local ok = H.asm(b, { of = piv, name = "hbeam", ops = BEAM[side][gi], bound = V3(10, 10, 2), groups = BEAM_GROUPS })
+            if not ok then
+                for _, l in ipairs(beamLines(gi)) do
+                    if l.layer == 1 then
+                        local tip = beamPt(l, 1, 0)
+                        H.bone(b, { of = piv, p0 = V3(0, 0, 0), p1 = tip, th = 0.08, col = "b", mat = "ed" })
+                        H.orb(b, { of = piv, cf = CF(tip), d = 0.12, col = "w", mat = "g" })
+                    end
+                end
+            end
+        end
+        H.fx(b, { of = B, cf = CF(2.1, 1.5, 0.5 * side), size = V3(3.8, 3.6, 1.0), fx = { PIX("w", "a", "a", 6), TWINKLE("w", "b", 3.5) } })
     end
 end)
 end
@@ -30286,6 +32600,7 @@ local function paintSet(set, force)
     local pals = {}
     for _, name in ipairs(set.names) do pals[DEFS[name]] = M.palette(DEFS[name]) end
     local op = clamp(cfg.accOpacity or 1, 0.1, 1)
+    local fb = clamp(cfg.accBody or 0.45, 0, 2)
     local bc, bt = set.bcol, set.btr
     if not bc then bc, bt = {}, {}; set.bcol, set.btr = bc, bt end
     for i, p in ipairs(set.pcs) do
@@ -30295,7 +32610,8 @@ local function paintSet(set, force)
             if force or bc[i] ~= c then bc[i] = c; part.Color = c end
             local m = M.pieceMaterial(p)
             if force or part.Material ~= m then part.Material = m end
-            local tr = 1 - (1 - p.tr) * op
+            local tr = 1 - (1 - p.tr) * op * ((p.mat == "ff") and fb or 1)
+            if tr < 0 then tr = 0 elseif tr > 1 then tr = 1 end
             if force or bt[i] == nil or math.abs(bt[i] - tr) > 0.004 then bt[i] = tr; part.Transparency = tr end
         end
     end
@@ -30340,7 +32656,7 @@ local function holoTick(set, t, oy)
         local i = hp[k]
         local part = parts[i]
         local base, c0 = bt[i], bc[i]
-        if part and base and c0 then
+        if part and base and c0 and base < 0.995 then
             local tr, col = base, c0
             if amt > 0 then
                 local d = math.abs(part.Position.Y - oy - bandY)
@@ -30786,9 +33102,10 @@ M.PRESETS = {
     ["Holo Seraph"] = { "Holo Angel Wings", "Holo Halo", "Floor Sigil", "Scan Ring" },
     ["Holo Demon"] = { "Holo Demon Wings", "Holo Horns", "Gyro Rings", "Floor Sigil" },
     ["Holo Cyber"] = { "Circuit Wings", "Holo Crown", "Orbit Shards", "Scan Ring" },
+    ["Holo Angelic"] = { "Holo Beam Wings", "Holo Halo" },
     ["Holo Full"] = { "Holo Angel Wings", "Holo Halo", "Gyro Rings", "Orbit Shards", "Floor Sigil", "Scan Ring" },
 }
-M.PRESET_NAMES = { "Custom", "Holo Seraph", "Holo Demon", "Holo Cyber", "Holo Full" }
+M.PRESET_NAMES = { "Custom", "Holo Seraph", "Holo Angelic", "Holo Demon", "Holo Cyber", "Holo Full" }
 
 local function setSelection(list)
     local by = {}
@@ -32220,6 +34537,7 @@ local function ensureGui()
     pcall(function() g.Parent = UI.gui and UI.gui.Parent or nil end)
     if not g.Parent then g.Parent = lp:WaitForChild("PlayerGui") end
     S.gui = g
+    if UIX.LANG then UIX.LANG.watch(g) end
     S.rows, S.rowSig, S.order, S.toasts, S.tg, S.hud, S.keys, S.mark, S.themed, S.themeKey = {}, nil, nil, {}, nil, nil, nil, nil, {}, nil
     return g
 end
@@ -36540,11 +38858,14 @@ local function hint(frame, text)
         TextTransparency = 0.25, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 10, 1, -20), Size = UDim2.new(1, -20, 0, 14), ZIndex = 5 }, frame)
 end
 
-function M.mountPreview(frame)
+function M.mountPreview(frame, opts)
+    local own = opts and opts.own == true
+    local EMPTY = own and "" or "Pick models in the Accessories tab"
     local V = { kind = "acc", frame = frame, yaw = 0.5, dist = 11, nextRig = 0, nextPaint = 0, nextFrame = 0, vis = false, nextVis = 0 }
+    if own then V.view, V.zoom, V.run = "Spin", 1, false end
     V.vf, V.cam = stage(frame)
     V.note = hint(frame, "Drag to rotate")
-    V.empty = mk("TextLabel", { BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = "Pick models in the Accessories tab", TextSize = 13, TextColor3 = Color3.fromRGB(200, 194, 225),
+    V.empty = mk("TextLabel", { BackgroundTransparency = 1, Font = Enum.Font.GothamMedium, Text = EMPTY, TextSize = 13, TextColor3 = Color3.fromRGB(200, 194, 225),
         AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Size = UDim2.new(1, -24, 0, 18), Visible = false, ZIndex = 5 }, frame)
 
     local function clearRig()
@@ -36569,6 +38890,10 @@ function M.mountPreview(frame)
     end
 
     local function names()
+        if own then
+            if cfg.accOn then return ACC.selected() end
+            return {}
+        end
         local show = cfg.charShow
         if show and show ~= "My selection" and ACC.DEFS[show] then return { show } end
         return ACC.selected()
@@ -36584,15 +38909,15 @@ function M.mountPreview(frame)
             pcs, why = ACC.pieceList(nm, V.rig)
             if not pcs then
                 V.empty.Text = "Building models..."
-                V.empty.Visible = true
+                V.empty.Visible = not own
                 return
             end
         end
-        V.empty.Text = "Pick models in the Accessories tab"
+        V.empty.Text = EMPTY
         V.accSig = sig
         if V.accFolder then pcall(function() V.accFolder:Destroy() end); V.accFolder = nil end
         V.set = nil
-        V.empty.Visible = (#nm == 0)
+        V.empty.Visible = (#nm == 0) and EMPTY ~= ""
         if #nm == 0 or not V.rig then V.dist = 10.5; return end
         local fold = mk("Folder", { Name = "acc" }, V.vf)
         local set = { names = nm, pcs = pcs, parts = {} }
@@ -36626,7 +38951,7 @@ function M.mountPreview(frame)
         end
         if not V.model then return end
         buildAcc()
-        local view = cfg.charView
+        local view = V.view or cfg.charView
         if view == "Spin" then
             if not dragging or dragView ~= V then V.yaw = V.yaw + dt * 0.55 end
         else
@@ -36636,7 +38961,7 @@ function M.mountPreview(frame)
                 V.yaw = V.yaw + d * damp(8, dt)
             end
         end
-        local dist = V.dist * (cfg.charZoom or 1)
+        local dist = V.dist * (V.zoom or cfg.charZoom or 1)
         V.curDist = V.curDist and (V.curDist + (dist - V.curDist) * damp(6, dt)) or dist
         local pitch = 0.12
         local eye = V.center + V3(math.sin(V.yaw) * math.cos(pitch), math.sin(pitch), -math.cos(V.yaw) * math.cos(pitch)) * V.curDist
@@ -36645,7 +38970,9 @@ function M.mountPreview(frame)
             V.nextFrame = t + 1 / 30
             local att = {}
             for k, a in pairs(V.rig.att) do att[k] = a.p.CFrame * a.o end
-            local st = { speed = cfg.charRun and 17 or 0, air = false }
+            local runOn = cfg.charRun
+            if V.run ~= nil then runOn = V.run end
+            local st = { speed = runOn and 17 or 0, air = false }
             local lay = ACC.layout(V.set.pcs, att, t, st)
             for i, part in ipairs(V.set.parts) do
                 local c = lay[i]
@@ -36660,6 +38987,7 @@ function M.mountPreview(frame)
         end
     end
 
+    function V.setView(v) V.view = v end
     function V.invalidate() V.model = nil; V.accSig = nil end
     function V.destroy() clearRig(); pcall(function() frame:ClearAllChildren() end) end
 
@@ -37490,8 +39818,14 @@ local GAP_S = 0.7
 local MAX_WORN = 12
 local MAX_SCANS = 4
 local FILL_TO = 18
-local CELL_MIN = 86
 local GAP = 6
+local MAX_ITEMS = 300
+local COLS, ROWS = 5, 5
+local MIN_ROW_H = 96
+local SBW = 8
+local SIDE_MIN = 700
+local LEFT_FRAC = 0.58
+M.WIDE = { w = 1180, h = 740 }
 local HOSTS = { "https://catalog.roblox.com", "https://catalog.roproxy.com" }
 
 local TYPES = {
@@ -37524,6 +39858,7 @@ local S = { token = 0, busy = false, q = "", page = 1, starts = { [1] = "" }, ne
 M.S = S
 M.worn, M.byId = {}, {}
 M.status, M.wornStatus, M.via = "Press Search to browse the catalog", "", ""
+M.autoMore = true
 
 local function idStr(n) return string.format("%.0f", n) end
 
@@ -37837,7 +40172,7 @@ local function fetchPage(my, start)
     end
 end
 
-local render
+local render, checkMore, paintMore
 
 local function load(p)
     S.token = S.token + 1
@@ -37883,6 +40218,8 @@ function M.search()
     S.q = string.gsub(string.gsub(tostring(cfg.catQ or ""), "^%s+", ""), "%s+$", "")
     S.starts, S.nexts = { [1] = "" }, {}
     S.page = 1
+    S.emptyRuns, S.moreAt, S.appending = 0, 0, false
+    if M.ui and M.ui.scroll then pcall(function() M.ui.scroll.CanvasPosition = Vector2.new(0, 0) end) end
     load(1)
 end
 function M.nextPage()
@@ -37895,6 +40232,52 @@ end
 function M.prevPage()
     if S.busy or S.page <= 1 then return end
     load(S.page - 1)
+end
+
+function M.more()
+    if S.busy or not S.loadedOnce or S.failed then return false end
+    local nx = S.nexts[S.page]
+    if not nx or #S.items >= MAX_ITEMS or os.clock() < (S.moreAt or 0) then return false end
+    S.token = S.token + 1
+    local my = S.token
+    local p = S.page + 1
+    S.starts[p] = nx
+    S.busy = true
+    S.appending = true
+    setStatus("Loading more...")
+    if paintMore then paintMore() end
+    task.spawn(function()
+        local ok, items, nxt, err = pcall(fetchPage, my, nx)
+        if my ~= S.token then return end
+        S.busy = false
+        S.appending = false
+        if not ok then err = tostring(items); items = nil end
+        if not items then
+            S.moreAt = os.clock() + 4
+            setStatus("Could not load more: " .. tostring(err))
+            if render then render() end
+            return
+        end
+        local have = {}
+        for _, it in ipairs(S.items) do have[it.id] = true end
+        local added = 0
+        for _, it in ipairs(items) do
+            if not have[it.id] and #S.items < MAX_ITEMS then
+                have[it.id] = true
+                S.items[#S.items + 1] = it
+                added = added + 1
+            end
+        end
+        S.page = p
+        S.nexts[p] = nxt
+        S.emptyRuns = (added == 0) and ((S.emptyRuns or 0) + 1) or 0
+        if S.emptyRuns >= 3 then S.nexts[p] = nil end
+        local t = #S.items .. " items  |  " .. (S.nexts[p] and "scroll for more" or "that is everything")
+        if M.via ~= "roblox" and M.via ~= "" then t = t .. "  |  via " .. M.via end
+        setStatus(t)
+        if render then render() end
+    end)
+    return true
 end
 
 local function wearable(o)
@@ -38768,6 +41151,17 @@ function M.lookUndo()
     return true
 end
 
+local CHIP_TEXT = {
+    ["All accessories"] = "All", ["Hair"] = "Hair", ["Back"] = "Back", ["Hats"] = "Hats", ["Face"] = "Face", ["Neck"] = "Neck", ["Shoulder"] = "Shoulder",
+    ["Front"] = "Front", ["Waist"] = "Waist", ["Classic T-Shirts"] = "T-Shirts", ["Classic Shirts"] = "Shirts", ["Classic Pants"] = "Pants",
+}
+local SEC_ACC, SEC_CLOTH = "Accessories", "Clothing"
+local function sectionOfType(name)
+    local ty = TYPE_BY[name]
+    return (ty and ty.cat == 3) and SEC_CLOTH or SEC_ACC
+end
+M.sectionOfType = sectionOfType
+
 local function priceText(it)
     if it.price == nil then return "Off sale" end
     if it.price == 0 then return "Free" end
@@ -38787,33 +41181,64 @@ end
 
 local function thumb(id) return "rbxthumb://type=Asset&id=" .. idStr(id) .. "&w=150&h=150" end
 
+local function scaleNow()
+    local ok, s = pcall(UIX.curScale)
+    if ok and type(s) == "number" and s > 0.05 then return s end
+    return 1
+end
+
+local function sizeOf(o)
+    local a = o.AbsoluteSize
+    local s = scaleNow()
+    return a.X / s, a.Y / s
+end
+
+local function snd(kind) if UIX.snd then pcall(UIX.snd, kind) end end
+
+local function sizeCell(cell, cw, chh)
+    if cell.cw == cw and cell.chh == chh then return end
+    cell.cw, cell.chh = cw, chh
+    local th = chh >= 112 and 40 or 28
+    cell.img.Size = UDim2.new(1, -8, 0, math.max(24, chh - th - 8))
+    cell.nm.Position = UDim2.fromOffset(5, chh - th - 3)
+    cell.nm.Size = UDim2.new(1, -10, 0, th - 14)
+    cell.nm.TextWrapped = th > 30
+    cell.pr.Position = UDim2.fromOffset(5, chh - 15)
+end
+
 local function makeCell(ui, idx)
-    local c = new("TextButton", { Size = UDim2.fromOffset(CELL_MIN, CELL_MIN + 38), Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = idx, Visible = false }, ui.grid)
+    local c = new("TextButton", { Size = UDim2.fromOffset(ui.cw or 100, ui.chh or 110), Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = idx, Visible = false }, ui.grid)
     bindTheme(c, "BackgroundColor3", "off")
     corner(c, 9)
     local st = stroke(c, T.line, 1, 0.4)
     bindTheme(st, "Color", "line")
-    local img = new("ImageLabel", { Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 1, -44), BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Fit,
+    local img = new("ImageLabel", { Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 0, 60), BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Fit,
         BorderSizePixel = 0 }, c)
     local nm = label(c, "", 10, "text", F.med, XL)
-    nm.Position = UDim2.new(0, 5, 1, -38); nm.Size = UDim2.new(1, -10, 0, 24); nm.TextWrapped = true; nm.TextYAlignment = Enum.TextYAlignment.Top
+    nm.TextYAlignment = Enum.TextYAlignment.Top; nm.TextTruncate = Enum.TextTruncate.AtEnd
     local pr = label(c, "", 10, "dim", F.reg, XL)
-    pr.Position = UDim2.new(0, 5, 1, -15); pr.Size = UDim2.new(1, -10, 0, 12); pr.TextTruncate = Enum.TextTruncate.AtEnd
+    pr.Size = UDim2.new(1, -10, 0, 12); pr.TextTruncate = Enum.TextTruncate.AtEnd
     local tg = label(c, "", 9, "dim", F.bold, XL)
-    tg.Position = UDim2.fromOffset(6, 5); tg.Size = UDim2.fromOffset(60, 11)
+    tg.Position = UDim2.fromOffset(7, 6); tg.Size = UDim2.fromOffset(60, 11); tg.ZIndex = 3
     local badge = new("Frame", { Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -22, 0, 4), BorderSizePixel = 0, Visible = false, ZIndex = 3 }, c)
     bindTheme(badge, "BackgroundColor3", "acc")
     corner(badge, 9)
     local bt = label(badge, "\u{2713}", 12, "onacc", F.bold, XL)
     bt.Size = UDim2.fromScale(1, 1); bt.TextXAlignment = Enum.TextXAlignment.Center
-    c.MouseEnter:Connect(function() tw(st, TI.fast, { Color = T.acc, Transparency = 0.1 }) end)
+    local cell = { btn = c, img = img, nm = nm, pr = pr, tg = tg, badge = badge, st = st, item = nil, loaded = false }
+    sizeCell(cell, ui.cw or 100, ui.chh or 110)
+    c.MouseEnter:Connect(function()
+        tw(st, TI.fast, { Color = T.acc, Transparency = 0.1 })
+        if M.ui and M.ui.onHover then M.ui.onHover(cell) end
+    end)
     c.MouseLeave:Connect(function()
         local worn = c:GetAttribute("worn") == true
         tw(st, TI.fast, { Color = worn and T.acc or T.line, Transparency = worn and 0 or 0.4 })
+        if M.ui and M.ui.onHover then M.ui.onHover(nil) end
     end)
-    local cell = { btn = c, img = img, nm = nm, pr = pr, tg = tg, badge = badge, st = st, item = nil }
     c.Activated:Connect(function()
         if cell.item then
+            snd("click")
             local ok, e = pcall(M.toggle, cell.item)
             if not ok then report("catalog", e) end
         end
@@ -38830,23 +41255,83 @@ local function paintMark(cell)
     cell.st.Thickness = worn and 2 or 1
 end
 
-local lastCols = 0
+local function paintImages()
+    local u = M.ui
+    if not u or not u.cols then return end
+    local step = u.chh + GAP
+    local pos = u.scroll.CanvasPosition.Y
+    local r0 = math.floor(pos / step) - 1
+    local r1 = math.ceil((pos + (u.viewH or 600)) / step) + 1
+    for i, cell in ipairs(u.cells) do
+        if cell.item and not cell.loaded then
+            local row = math.floor((i - 1) / u.cols)
+            if row >= r0 and row <= r1 then
+                cell.loaded = true
+                cell.img.Image = thumb(cell.item.id)
+            end
+        end
+    end
+end
+
+local function gridMetrics(vw, vh)
+    local cols = COLS
+    if vw < 330 then cols = 4 end
+    if vw < 250 then cols = 3 end
+    local cw = math.max(40, math.floor((vw - SBW - GAP * (cols - 1)) / cols))
+    local ch = math.floor((vh - GAP * (ROWS - 1)) / ROWS)
+    ch = math.max(MIN_ROW_H, math.min(ch, cw + 40))
+    return cols, cw, ch
+end
+
 local function relayout()
     local u = M.ui
     if not u then return end
-    local w = u.grid.AbsoluteSize.X
-    if w < 60 then w = 300 end
-    local cols = math.max(2, math.min(6, math.floor((w + GAP) / (CELL_MIN + GAP))))
-    local cw = math.floor((w - GAP * (cols - 1)) / cols)
-    local chh = cw + 38
+    local P = M.panes
+    local vw, vh = (P and P.gridW) or 0, (P and P.gridH) or 0
+    if vw < 60 then vw = 520 end
+    if vh < 60 then vh = 440 end
+    local cols, cw, chh = gridMetrics(vw, vh)
+    u.cols, u.cw, u.chh, u.viewH = cols, cw, chh, vh
     u.layout.CellSize = UDim2.fromOffset(cw, chh)
+    u.layout.FillDirectionMaxCells = cols
+    for _, cell in ipairs(u.cells) do sizeCell(cell, cw, chh) end
     local n = #S.items
     local rows = math.ceil(n / cols)
-    local h = rows > 0 and (rows * chh + (rows - 1) * GAP) or 64
-    u.holder.Size = UDim2.new(1, 0, 0, h + 4)
-    u.grid.Size = UDim2.new(1, 0, 0, h)
-    lastCols = cols
+    local h = rows > 0 and (rows * chh + (rows - 1) * GAP) or 0
+    u.grid.Size = UDim2.new(1, -SBW, 0, h)
+    u.more.Position = UDim2.fromOffset(0, h + 4)
+    u.more.Size = UDim2.new(1, -SBW, 0, 22)
+    u.canvasH = h + 34
+    u.scroll.CanvasSize = UDim2.fromOffset(0, u.canvasH)
+    paintImages()
 end
+
+paintMore = function()
+    local u = M.ui
+    if not u then return end
+    local t = ""
+    if S.busy and S.appending then
+        t = "Loading more..."
+    elseif #S.items > 0 then
+        if S.nexts[S.page] and #S.items < MAX_ITEMS then t = "Scroll down for more"
+        elseif #S.items >= MAX_ITEMS then t = "That is a lot - narrow the search to see other items"
+        else t = "That is everything for this search" end
+    end
+    u.more.Text = t
+    u.more.Visible = t ~= ""
+end
+
+checkMore = function()
+    local u = M.ui
+    if not M.autoMore or not u or S.busy or not S.loadedOnce or S.failed or not u.canvasH then return end
+    if not S.nexts[S.page] or #S.items >= MAX_ITEMS then return end
+    if os.clock() < (S.moreAt or 0) then return end
+    if not shown(u.scroll) then return end
+    local pos = u.scroll.CanvasPosition.Y
+    if pos + (u.viewH or 400) >= u.canvasH - u.chh then M.more() end
+end
+
+local syncControls
 
 render = function()
     local u = M.ui
@@ -38859,17 +41344,22 @@ render = function()
             u.cells[i] = cell
         end
         local it = S.items[i]
-        cell.item = it
-        cell.img.Image = thumb(it.id)
-        cell.nm.Text = it.name
-        cell.pr.Text = priceText(it) .. (it.lim and "  (limited)" or "")
-        cell.tg.Text = AT_NAME[it.at] or ""
-        cell.btn.Visible = true
-        paintMark(cell)
+        if cell.item ~= it then
+            cell.item = it
+            cell.loaded = false
+            cell.img.Image = ""
+            cell.nm.Text = it.name
+            cell.pr.Text = priceText(it) .. (it.lim and "  (limited)" or "")
+            cell.tg.Text = AT_NAME[it.at] or ""
+            paintMark(cell)
+        end
+        if not cell.btn.Visible then cell.btn.Visible = true end
     end
     for i = n + 1, #u.cells do
-        u.cells[i].item = nil
-        u.cells[i].btn.Visible = false
+        local cell = u.cells[i]
+        cell.item = nil
+        cell.loaded = false
+        cell.btn.Visible = false
     end
     u.empty.Visible = n == 0
     if S.busy then
@@ -38882,13 +41372,9 @@ render = function()
         u.empty.Text = "Press Search to browse the catalog."
     end
     relayout()
-    if u.prev then
-        u.prev.Active = S.page > 1 and not S.busy
-        u.next.Active = S.nexts[S.page] ~= nil and not S.busy
-        u.pageLbl.Text = "Page " .. S.page
-        u.prev.TextTransparency = u.prev.Active and 0 or 0.6
-        u.next.TextTransparency = u.next.Active and 0 or 0.6
-    end
+    paintMore()
+    if syncControls then syncControls() end
+    checkMore()
 end
 
 refreshMarks = function()
@@ -38897,6 +41383,22 @@ refreshMarks = function()
     for _, cell in ipairs(u.cells) do
         if cell.item then paintMark(cell) end
     end
+end
+
+local pvStamp
+local function touchPreview() pvStamp = os.clock() end
+
+local function lookCounts()
+    local own = 0
+    for _, r in ipairs(MINE.list) do if not r.removed then own = own + 1 end end
+    return #M.worn, own
+end
+
+local function paintCounts()
+    local P = M.panes
+    if not P or not P.sub then return end
+    local c, o = lookCounts()
+    P.sub.Text = c .. " from the catalog  |  " .. o .. " of yours"
 end
 
 refreshWorn = function()
@@ -38924,6 +41426,8 @@ refreshWorn = function()
     u.holder.Size = UDim2.new(1, 0, 0, n > 0 and (n * 40) or 24)
     u.none.Visible = n == 0
     setWornStatus(M.wornStatus)
+    paintCounts()
+    touchPreview()
 end
 
 refreshMine = function()
@@ -38955,60 +41459,307 @@ refreshMine = function()
     local t = MINE.say or ""
     u.status.Text = t
     u.status.Visible = t ~= ""
+    paintCounts()
+    touchPreview()
 end
 
-local function actionRow(parent, texts, cbs)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, 0, 1, 0); f.BackgroundTransparency = 1; f.BorderSizePixel = 0
-    f.Parent = parent
-    return f
+local function pill(parent, text, h)
+    local b = new("TextButton", { Text = text, TextSize = 11, Font = F.bold, AutoButtonColor = false, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 5 }, parent)
+    corner(b, math.floor(h / 2))
+    local st = stroke(b, T.line, 1, 0)
+    bindTheme(st, "Color", "line")
+    b.MouseEnter:Connect(function() if b:GetAttribute("on") ~= true then tw(b, TI.fast, { BackgroundColor3 = T.panel2 }) end end)
+    b.MouseLeave:Connect(function() if b:GetAttribute("on") ~= true then tw(b, TI.fast, { BackgroundColor3 = T.off }) end end)
+    b.InputBegan:Connect(function(i) if UIX.isPress(i) then UIX.ripple(b, i.Position, "acc") end end)
+    return b
+end
+
+local function paintPill(b, on)
+    b:SetAttribute("on", on)
+    b.BackgroundColor3 = on and T.acc or T.off
+    b.TextColor3 = on and T.onacc or T.dim
+end
+
+syncControls = function()
+    local P = M.panes
+    if not P or not P.chips then return end
+    local sec = sectionOfType(cfg.catType)
+    paintPill(P.secA, sec == SEC_ACC)
+    paintPill(P.secC, sec == SEC_CLOTH)
+    paintPill(P.free, cfg.catFree == true)
+    P.free.Text = cfg.catFree and "\u{2713}  Free only" or "Free only"
+    for _, c in ipairs(P.chips) do paintPill(c.btn, c.name == cfg.catType) end
+    if P.qBox and not P.qBox:IsFocused() and P.qBox.Text ~= tostring(cfg.catQ or "") then P.qBox.Text = tostring(cfg.catQ or "") end
+    if P.secShown ~= sec and P.layoutLeft then P.layoutLeft() end
+end
+
+local function layoutLeft(W, H)
+    local P = M.panes
+    P.lw, P.lh = W, H
+    local y = 10
+    P.qBox.Position = UDim2.fromOffset(10, y); P.qBox.Size = UDim2.fromOffset(W - 20 - 90, 30)
+    P.qIc.Position = UDim2.fromOffset(19, y + 8)
+    P.go.Position = UDim2.fromOffset(W - 10 - 84, y); P.go.Size = UDim2.fromOffset(84, 30)
+    y = y + 38
+    local sec = sectionOfType(cfg.catType)
+    P.secA.Position = UDim2.fromOffset(10, y); P.secA.Size = UDim2.fromOffset(104, 28)
+    P.secC.Position = UDim2.fromOffset(120, y); P.secC.Size = UDim2.fromOffset(84, 28)
+    local right = W - 10
+    P.free.Size = UDim2.fromOffset(100, 28); P.free.Position = UDim2.fromOffset(right - 100, y)
+    right = right - 106
+    if W >= 520 then
+        P.sortF.Size = UDim2.fromOffset(190, 32); P.sortF.Position = UDim2.fromOffset(right - 190, y - 2)
+        y = y + 36
+    else
+        y = y + 34
+        P.sortF.Size = UDim2.fromOffset(W - 20, 32); P.sortF.Position = UDim2.fromOffset(10, y - 2)
+        y = y + 36
+    end
+    local x, rowY = 10, y
+    for _, c in ipairs(P.chips) do
+        local vis = (c.sec == sec)
+        c.btn.Visible = vis
+        if vis then
+            if x + c.w > W - 10 and x > 10 then x = 10; rowY = rowY + 30 end
+            c.btn.Position = UDim2.fromOffset(x, rowY)
+            x = x + c.w + 6
+        end
+    end
+    y = rowY + 34
+    P.info.Position = UDim2.fromOffset(12, y); P.info.Size = UDim2.new(1, -24, 0, 14)
+    y = y + 20
+    P.holder.Position = UDim2.fromOffset(8, y); P.holder.Size = UDim2.new(1, -16, 1, -(y + 8))
+    P.gridW = W - 16
+    P.gridH = H - (y + 8)
+    P.secShown = sec
+end
+
+local function layoutRight(W, H, side)
+    local P = M.panes
+    local cardH = side and math.max(210, math.min(400, math.floor(H * 0.5))) or 310
+    P.card.Size = UDim2.new(1, 0, 0, cardH)
+    P.listHost.Position = UDim2.fromOffset(0, cardH + 10)
+    P.listHost.Size = UDim2.new(1, 0, 1, -(cardH + 10))
+end
+
+local function layoutPanes()
+    local P = M.panes
+    if not P then return end
+    local pw, ph
+    if UIX.pageSize then pw, ph = UIX.pageSize() else pw, ph = sizeOf(P.page) end
+    if pw < 60 or ph < 60 then pw, ph = 900, 600 end
+    local side = pw >= SIDE_MIN
+    P.side = side
+    local lw, lh, rw, rh
+    if side then
+        lw = math.floor(pw * LEFT_FRAC) - 5
+        lh = math.floor(ph)
+        rw = pw - lw - 10
+        rh = lh
+        P.host.CanvasSize = UDim2.new()
+        P.host.CanvasPosition = Vector2.new(0, 0)
+        P.host.ScrollingEnabled = false
+        P.L.Position = UDim2.fromOffset(0, 0); P.L.Size = UDim2.fromOffset(lw, lh)
+        P.R.Position = UDim2.fromOffset(lw + 10, 0); P.R.Size = UDim2.fromOffset(rw, rh)
+    else
+        lw = math.floor(pw) - 7
+        lh = math.max(400, math.min(560, math.floor(ph) - 20))
+        rw = lw
+        rh = 680
+        P.host.CanvasSize = UDim2.fromOffset(0, lh + 10 + rh + 8)
+        P.host.ScrollingEnabled = true
+        P.L.Position = UDim2.fromOffset(0, 0); P.L.Size = UDim2.fromOffset(lw, lh)
+        P.R.Position = UDim2.fromOffset(0, lh + 10); P.R.Size = UDim2.fromOffset(rw, rh)
+    end
+    layoutLeft(lw, lh)
+    layoutRight(rw, rh, side)
+    relayout()
+end
+
+local function adoptSection(P, tab, order)
+    local rec = tab.secs[#tab.secs]
+    rec.holder.Parent = P.list
+    rec.holder.LayoutOrder = order
+    return rec
 end
 
 function M.buildTab(tab, D)
-    local s = tab:Section("L", "Browse the catalog", nil, "ic_gem")
-    s:TextBox("catQ", "Search", "hair, hat, wings, hoodie, jeans ...", D.catQ, function(_, enter) if enter then M.search() end end)
-    s:Dropdown("catType", "Type", TYPE_NAMES, TYPE_BY[D.catType] and D.catType or TYPES[1].name, false, function() M.search() end)
-    s:Dropdown("catSort", "Sort", SORT_NAMES, D.catSort, false, function() M.search() end)
-    s:Toggle("catFree", "Free items only", D.catFree, function() M.search() end)
-    s:Button("Search", function() M.search() end, true)
-    local stl = s:Label(M.status)
-    M.onStatus = function(t) stl.Text = t end
+    tab.wide = M.WIDE
+    tab.setCompact = function() end
+    tab.left.Visible = false
+    tab.right.Visible = false
+    if tab.empty then tab.empty.Visible = false end
+    local P = { tab = tab, page = tab.page, hover = false }
+    M.panes = P
 
-    local holder = s:Custom(60)
-    holder.ClipsDescendants = false
-    local grid = new("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0 }, holder)
-    local layout = new("UIGridLayout", { CellPadding = UDim2.fromOffset(GAP, GAP), CellSize = UDim2.fromOffset(CELL_MIN, CELL_MIN + 38), SortOrder = Enum.SortOrder.LayoutOrder,
-        HorizontalAlignment = Enum.HorizontalAlignment.Left }, grid)
-    local empty = label(holder, "Press Search to browse the catalog.", 12, "dim", F.reg, XL)
-    empty.Position = UDim2.fromOffset(0, 4)
-    empty.Size = UDim2.new(1, 0, 0, 60); empty.TextWrapped = true; empty.TextXAlignment = Enum.TextXAlignment.Center; empty.TextYAlignment = Enum.TextYAlignment.Top
-    empty.ZIndex = 2
-    M.ui = { holder = holder, grid = grid, layout = layout, empty = empty, cells = {} }
-
-    local pagerRow = s:Custom(32)
-    local function pbtn(txt, pos, size)
-        local b = new("TextButton", { Position = pos, Size = size, Text = txt, TextSize = 12, Font = F.bold, AutoButtonColor = false, BorderSizePixel = 0 }, pagerRow)
-        bindTheme(b, "BackgroundColor3", "off"); bindTheme(b, "TextColor3", "text")
-        corner(b, 9)
-        return b
+    local hs = tab:Section("L", "Catalog filters", nil, "ic_gem")
+    hs:TextBox("catQ", "Search", "hair, hat, wings, hoodie, jeans ...", D.catQ, function(_, enter) if enter then M.search() end end)
+    hs:Dropdown("catType", "Type", TYPE_NAMES, TYPE_BY[D.catType] and D.catType or TYPES[1].name, false, function() M.search() end)
+    hs:Dropdown("catSort", "Sort", SORT_NAMES, D.catSort, false, function() M.search() end)
+    hs:Toggle("catFree", "Free items only", D.catFree, function() M.search() end)
+    for i = #UIX.searchIdx, 1, -1 do
+        local e = UIX.searchIdx[i]
+        if e.tab == tab and ((e.kind == "section" and e.text == "Catalog filters") or (e.kind == "ctl" and e.sec == "Catalog filters" and e.text ~= "Sort")) then
+            table.remove(UIX.searchIdx, i)
+        end
     end
-    local prev = pbtn("\u{25C0}  Previous", UDim2.fromOffset(0, 1), UDim2.new(0.36, -4, 0, 30))
-    local nxt = pbtn("Next  \u{25B6}", UDim2.new(0.64, 4, 0, 1), UDim2.new(0.36, -4, 0, 30))
-    local pl = label(pagerRow, "Page 1", 12, "dim", F.med, XL)
-    pl.Position = UDim2.new(0.36, 0, 0, 1); pl.Size = UDim2.new(0.28, 0, 0, 30); pl.TextXAlignment = Enum.TextXAlignment.Center
-    prev.Activated:Connect(function() M.prevPage() end)
-    nxt.Activated:Connect(function() M.nextPage() end)
-    M.ui.prev, M.ui.next, M.ui.pageLbl = prev, nxt, pl
-    prev.Active = false; nxt.Active = false
-    s:Label("Click an item to try it on, click it again to take it off. Only you can see what you wear here. Classic T-Shirts, Shirts and Pants replace the same piece of your outfit and your own comes back when you take them off. Accessory type filters read a few catalog pages to find matches, so they can take a moment.")
+    for _, key in ipairs({ "catQ", "catType", "catSort", "catFree" }) do
+        local f = Flags[key]
+        if f and f.Set then
+            local orig = f.Set
+            f.Set = function(self, v, silent)
+                orig(self, v, silent)
+                if syncControls then syncControls() end
+            end
+        end
+    end
 
-    grid:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        local w = grid.AbsoluteSize.X
-        local cols = math.max(2, math.min(6, math.floor(((w < 60 and 300 or w) + GAP) / (CELL_MIN + GAP))))
-        if cols ~= lastCols then relayout() end
+    local host = new("ScrollingFrame", { Name = "catHost", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageTransparency = 0.45,
+        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.None, ScrollingDirection = Enum.ScrollingDirection.Y, ScrollingEnabled = false, ZIndex = 4 }, tab.page)
+    bindTheme(host, "ScrollBarImageColor3", "acc")
+    P.host = host
+
+    local L = new("Frame", { Name = "browse", BackgroundTransparency = 0.04, BorderSizePixel = 0, ZIndex = 4 }, host)
+    bindTheme(L, "BackgroundColor3", "panel")
+    UIX.glassUse("sec", L, 0.04)
+    corner(L, 10)
+    bindTheme(stroke(L, T.line, 1, 0), "Color", "line")
+    P.L = L
+
+    local qBox = new("TextBox", { Text = tostring(cfg.catQ or ""), PlaceholderText = "Search: hair, hat, wings, hoodie, jeans ...", Font = F.reg, TextSize = 12, ClearTextOnFocus = false,
+        TextXAlignment = XL, BorderSizePixel = 0, ZIndex = 5 }, L)
+    bindTheme(qBox, "BackgroundColor3", "off"); bindTheme(qBox, "TextColor3", "text"); bindTheme(qBox, "PlaceholderColor3", "dim")
+    corner(qBox, 8); pad(qBox, 32, 0, 10, 0)
+    local qst = stroke(qBox, T.line, 1, 0)
+    bindTheme(qst, "Color", "line")
+    qBox.Focused:Connect(function() tw(qst, TI.fast, { Color = T.dim }) end)
+    qBox.FocusLost:Connect(function(enter)
+        tw(qst, TI.fast, { Color = T.line })
+        cfg.catQ = qBox.Text
+        if enter then M.search() end
+    end)
+    local qIc = UIX.icon(L, "ic_search", 13, "dim")
+    qIc.ZIndex = 6
+    P.qBox, P.qIc = qBox, qIc
+
+    local go = pill(L, "Search", 30)
+    bindTheme(go, "BackgroundColor3", "acc")
+    go.Activated:Connect(function()
+        snd("click")
+        cfg.catQ = qBox.Text
+        M.search()
+    end)
+    go.TextColor3 = T.onacc
+    P.go = go
+
+    P.secA = pill(L, SEC_ACC, 28)
+    P.secC = pill(L, SEC_CLOTH, 28)
+    P.secA.Activated:Connect(function()
+        if sectionOfType(cfg.catType) ~= SEC_ACC then Flags.catType:Set(TYPES[1].name) end
+    end)
+    P.secC.Activated:Connect(function()
+        if sectionOfType(cfg.catType) ~= SEC_CLOTH then Flags.catType:Set("Classic Shirts") end
+    end)
+    P.free = pill(L, "Free only", 28)
+    P.free.Activated:Connect(function() Flags.catFree:Set(not cfg.catFree) end)
+
+    local sortF = Flags.catSort.frame
+    sortF.Parent = L
+    sortF.ZIndex = 5
+    P.sortF = sortF
+
+    P.chips = {}
+    local function addChips(list, sec)
+        for _, name in ipairs(list) do
+            local txt = CHIP_TEXT[name] or name
+            local b = pill(L, txt, 26)
+            local w = math.floor(16 + #txt * 6.6)
+            b.Size = UDim2.fromOffset(w, 26)
+            b.Activated:Connect(function()
+                if cfg.catType ~= name then Flags.catType:Set(name) end
+            end)
+            P.chips[#P.chips + 1] = { btn = b, name = name, sec = sec, w = w }
+        end
+    end
+    addChips({ "All accessories", "Hair", "Back", "Hats", "Face", "Neck", "Shoulder", "Front", "Waist" }, SEC_ACC)
+    addChips({ "Classic T-Shirts", "Classic Shirts", "Classic Pants" }, SEC_CLOTH)
+
+    local info = label(L, M.status, 11, "dim", F.reg, XL)
+    info.TextTruncate = Enum.TextTruncate.AtEnd; info.ZIndex = 5
+    P.info = info
+    M.onStatus = function(t) if not P.hover then info.Text = t end end
+
+    local holder = new("Frame", { Name = "gridHolder", BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 5 }, L)
+    P.holder = holder
+    local scroll = new("ScrollingFrame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4, ScrollBarImageTransparency = 0.35,
+        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.None, ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 5 }, holder)
+    bindTheme(scroll, "ScrollBarImageColor3", "acc")
+    local grid = new("Frame", { Size = UDim2.new(1, -SBW, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5 }, scroll)
+    local layout = new("UIGridLayout", { CellPadding = UDim2.fromOffset(GAP, GAP), CellSize = UDim2.fromOffset(100, 110), SortOrder = Enum.SortOrder.LayoutOrder,
+        HorizontalAlignment = Enum.HorizontalAlignment.Left, FillDirectionMaxCells = COLS }, grid)
+    local more = label(scroll, "", 11, "dim", F.med, UIX.XC)
+    more.ZIndex = 5; more.Visible = false
+    local empty = label(holder, "Press Search to browse the catalog.", 12, "dim", F.reg, XL)
+    empty.Position = UDim2.fromOffset(0, 24)
+    empty.Size = UDim2.new(1, 0, 0, 60); empty.TextWrapped = true; empty.TextXAlignment = Enum.TextXAlignment.Center; empty.TextYAlignment = Enum.TextYAlignment.Top
+    empty.ZIndex = 7
+    M.ui = { holder = holder, scroll = scroll, grid = grid, layout = layout, empty = empty, more = more, cells = {} }
+    M.ui.onHover = function(cell)
+        if cell and cell.item then
+            local it = cell.item
+            P.hover = true
+            info.Text = it.name .. "  |  " .. (it.by ~= "" and ("by " .. it.by .. "  |  ") or "") .. priceText(it) .. (it.lim and "  (limited)" or "")
+        else
+            P.hover = false
+            info.Text = M.status
+        end
+    end
+    scroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+        paintImages()
+        checkMore()
     end)
 
+    local R = new("Frame", { Name = "look", BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 4 }, host)
+    P.R = R
+    local card = new("Frame", { Name = "lookCard", BackgroundTransparency = 0.04, BorderSizePixel = 0, ZIndex = 4 }, R)
+    bindTheme(card, "BackgroundColor3", "panel")
+    UIX.glassUse("sec", card, 0.04)
+    corner(card, 10)
+    bindTheme(stroke(card, T.line, 1, 0), "Color", "line")
+    P.card = card
+    local ct = label(card, "Your character", 13, "text", F.bold, XL)
+    ct.Position = UDim2.fromOffset(12, 7); ct.Size = UDim2.new(1, -204, 0, 18); ct.ZIndex = 5
+    local sub = label(card, "", 10, "dim", F.reg, XL)
+    sub.Position = UDim2.fromOffset(12, 25); sub.Size = UDim2.new(1, -204, 0, 14); sub.ZIndex = 5; sub.TextTruncate = Enum.TextTruncate.AtEnd
+    P.sub = sub
+    local vrow = new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 9), Size = UDim2.fromOffset(184, 24), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5 }, card)
+    local vpHost = new("Frame", { Position = UDim2.fromOffset(10, 46), Size = UDim2.new(1, -20, 1, -56), BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 5 }, card)
+    corner(vpHost, 8)
+    P.pv = MISC.CHAR.mountPreview(vpHost, { own = true })
+    P.views = {}
+    for i, name in ipairs({ "Spin", "Front", "Back" }) do
+        local b = pill(vrow, name, 24)
+        b.Size = UDim2.fromOffset(58, 24); b.Position = UDim2.fromOffset((i - 1) * 63, 0); b.ZIndex = 9
+        b.Activated:Connect(function()
+            P.pv.setView(name)
+            P.viewNow = name
+            for _, v in ipairs(P.views) do paintPill(v.btn, v.name == name) end
+        end)
+        P.views[#P.views + 1] = { btn = b, name = name }
+        paintPill(b, name == "Spin")
+    end
+    P.viewNow = "Spin"
+
+    local listHost = new("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageTransparency = 0.45, CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 4 }, R)
+    bindTheme(listHost, "ScrollBarImageColor3", "acc")
+    UIX.vlist(listHost, 10)
+    pad(listHost, 0, 0, 7, 14)
+    P.list = listHost
+    P.listHost = listHost
+
     local w = tab:Section("R", "Wearing now", nil, "ic_heart")
+    adoptSection(P, tab, 1)
     local wl = w:Label(M.wornStatus)
     M.onWornStatus = function(t) wl.Text = t; wl.Visible = t ~= "" end
     wl.Visible = false
@@ -39021,13 +41772,9 @@ function M.buildTab(tab, D)
     w:Button("Take everything off", function() M.takeAllOff() end)
     w:TextBox("catId", "Asset id", "paste an id or a catalog link", D.catId, function(txt, enter) if enter and txt ~= "" then M.wearText(txt) end end)
     w:Button("Wear this id", function() M.wearText(cfg.catId) end)
-    w:Segment("catFit", "Fit on the body", { "Auto", "Layered", "Rigid" }, D.catFit, function() M.refit() end)
-    w:Segment("catMount", "Mount", { "Auto", "On character", "Detached" }, D.catMount, function() M.refit() end)
-    w:Toggle("catKeep", "Keep after respawn", D.catKeep)
-    w:Toggle("catMirror", "Mirror if blocked", D.catMirror)
-    w:Label("Items are loaded straight from Roblox and handed to your own character: accessories are attached, classic clothing swaps your shirt, T-shirt or pants texture. Other players do not see them. If a worn item is not visible on your character, set Fit on the body to Rigid. The line under each item says how it was fitted.")
 
     local mn = tab:Section("R", "On my character", nil, "ic_players")
+    adoptSection(P, tab, 2)
     local mst = mn:Label("")
     mst.Visible = false
     local mh = mn:Custom(24)
@@ -39041,7 +41788,16 @@ function M.buildTab(tab, D)
     mn:Button("Refresh the list", function() MINE.say = nil; M.mineRefresh(true) end)
     mn:Label("Everything your avatar wears right now: accessories, shirt, pants, T-shirt and face. Take items off one by one or all at once (this also takes off the catalog items you tried on). Only you see the change. A respawn brings your whole outfit back.")
 
+    local op = tab:Section("R", "Try-on options", nil, "ic_sliders")
+    adoptSection(P, tab, 3)
+    op:Segment("catFit", "Fit on the body", { "Auto", "Layered", "Rigid" }, D.catFit, function() M.refit() end)
+    op:Segment("catMount", "Mount", { "Auto", "On character", "Detached" }, D.catMount, function() M.refit() end)
+    op:Toggle("catKeep", "Keep after respawn", D.catKeep)
+    op:Toggle("catMirror", "Mirror if blocked", D.catMirror)
+    op:Label("Items are loaded straight from Roblox and handed to your own character: accessories are attached, classic clothing swaps your shirt, T-shirt or pants texture. Other players do not see them. If a worn item is not visible on your character, set Fit on the body to Rigid. The line under each item says how it was fitted.")
+
     local sh = tab:Section("R", "Share your look", nil, "ic_flower")
+    adoptSection(P, tab, 4)
     sh:Label("Tick what to include, press Copy and send the code to anyone. To try someone's look, paste their code, check what is inside and press Wear this look. Only the look changes: binds, aim and menu settings are never touched.")
     sh:Toggle("lkCat", "Catalog items you wear", D.lkCat)
     sh:Toggle("lkAcc", "3D accessories (wings, halos ...)", D.lkAcc)
@@ -39091,13 +41847,32 @@ function M.buildTab(tab, D)
     end)
     local lks = sh:Label(M.lookStatus)
     M.onLookStatus = function(t) lks.Text = t end
+
+    P.layoutLeft = function() layoutPanes() end
+    P.dirty = true
+    tab.page:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() P.dirty = true end)
+    if UIX.layoutHooks then UIX.layoutHooks[#UIX.layoutHooks + 1] = function() P.dirty = true end end
+    UIX.reg(function() if syncControls then syncControls() end; refreshMarks() end)
+    layoutPanes()
+    syncControls()
     refreshWorn()
     M.mineRefresh(true)
-    relayout()
+    paintCounts()
 end
 
 function M.step(dt)
     local t = os.clock()
+    local P = M.panes
+    if P then
+        if P.dirty then
+            P.dirty = false
+            layoutPanes()
+        end
+        if pvStamp and t - pvStamp > 0.35 then
+            pvStamp = nil
+            if P.pv then P.pv.invalidate() end
+        end
+    end
     if t < S.nextCheck then return end
     S.nextCheck = t + 1.5
     if not S.autoTried and not S.busy and M.ui and shown(M.ui.grid) then
@@ -39106,6 +41881,7 @@ function M.step(dt)
         return
     end
     if M.mineUi and shown(M.mineUi.list) then M.mineRefresh(false) end
+    checkMore()
     local ch = lp.Character
     local hum = ch and ch.Parent and ch:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
@@ -40519,6 +43295,7 @@ local function mkGui()
     pcall(function() if syn and syn.protect_gui then syn.protect_gui(g) end end)
     local ok = pcall(function() g.Parent = (gethui and gethui()) or svc("CoreGui") end)
     if not ok or not g.Parent then g.Parent = lp:WaitForChild("PlayerGui") end
+    if UIX.LANG then UIX.LANG.watch(g) end
     return g
 end
 
@@ -41032,6 +43809,7 @@ do
     g:Toggle("accAnim", "Animate (flap, spin, float)", D.accAnim)
     g:Toggle("accHolo", "Hologram shimmer (scan line, flicker, glitch)", D.accHolo)
     g:Slider("accHoloAmt", "Hologram strength", 0.2, 2, D.accHoloAmt, 2, "x")
+    g:Slider("accBody", "Hologram body (0 = only lines of light)", 0, 2, D.accBody, 2, "x")
     g:Toggle("wingFx", "Hologram particles (pixels, sparks)", D.wingFx)
     g:Slider("wingFxAmt", "Particle amount", 0.2, 2, D.wingFxAmt, 2, "x")
     g:Toggle("meshOn", "Smooth models (generated meshes)", D.meshOn)
@@ -41280,12 +44058,21 @@ do
     gk:Label("Atmosphere haze, clouds, depth-of-field blur and bloom are thinned out so the skybox picture stays readable. 0 = the look exactly as set, 1 = nearly raw sky.")
 
     local s = tSky:Section("L", "Skybox", "world")
-    s:Dropdown("skybox", "Sky", SKY_OPTIONS, D.skybox, false, function(v) W.onSkyPicked(v) end)
+    s:Dropdown("skybox", "Sky", W.skyOptions(), D.skybox, false, function(v) W.onSkyPicked(v) end)
+    local skyNote = s:Label(W.skyNoteText)
+    skyNote.Visible = W.skyNoteText ~= ""
+    W.onSkyNote = function(t) skyNote.Text = t; skyNote.Visible = t ~= "" end
+    s:Dropdown("skyFill", "Missing sky pictures", W.FILL_MODES, D.skyFill, false)
+    s:Label("Some skies come without one of the six pictures; the engine then shows its own default sky on that side and the sky looks like a cube. Auto fills the gap with black (dark skies) or a copy of a side picture (day skies).")
     s:Toggle("skyFade", "Dark dip between skies", D.skyFade)
     local gy = s:Group("cycle", "Cycle skies", D.cycle)
     gy:Slider("cycleTime", "Cycle every", 10, 300, D.cycleTime, 0, " s")
     s:Button("Random sky", function() W.randomSky() end)
-    s:Label("Dark fantasy skies are listed first: Berserk / Hell / Gloom / Mystic.")
+    s:Button("Hide this sky", function() W.hideSky(cfg.skybox) end)
+    local hiddenBtn = s:Button("Show hidden skies", function() W.restoreHidden() end)
+    W.onHiddenCount = function(n) hiddenBtn.Text = n > 0 and ("Show hidden skies (" .. n .. ")") or "Show hidden skies" end
+    W.refreshSkyOptions()
+    s:Label("Dark fantasy skies are listed first: Berserk / Hell / Gloom / Mystic. A sky you hide stays hidden next time too; it is not part of any config.")
 
     local s2 = tSky:Section("R", "Custom sky", "world")
     s2:TextBox("customId", "Asset ID", "Sky model id", "", function(text) if text ~= "" then W.loadCustom(text) end end)
@@ -41693,7 +44480,15 @@ local tPlayerPg = UITab("Player", "ic_players", nil)
 local tMiscPg = UITab("Misc", "ic_sliders", nil)
 
 local NEWS = {
-    { "Update 14 - Holograms (newest)", {
+    { "Update 15 (newest) - Light, catalog, Russian", {
+        "The holograms are now made of light: thin glowing lines with a white core and a faint fill, like the old light wings but in 3D, so they look the same from the front, the side and the back. Holo Angel Wings are rebuilt from glowing feathers.",
+        "New: Holo Beam Wings (the old fan of light lines, improved) and the quick look Holo Angelic (Beam Wings + Halo).",
+        "New slider Accessories > Hologram body: 0 shows only the lines of light, higher values bring back the glass-like fill. The big soft glow sprites were made smaller so they are not cut by your body from the front.",
+        "Catalog redesign: it opens wide, with your character on the right wearing everything you put on (your own accessories too) and the catalog on the left, split into sections with a grid of 5 by 5 items. Scroll down for more.",
+        "Skyboxes: a sky that comes without one of its six pictures no longer looks like a cube. Sky > Skybox > Missing sky pictures (Auto / Black / Copy a side / Leave) fills the gap. Hide this sky removes a sky for good, and Check all skies lists the ones with gaps.",
+        "New language switch in Config > Language: the whole menu can be English or Russian. The choice is kept on its own and is never part of a config, so loading a config or a code does not change it. Search understands Russian words too.",
+    } },
+    { "Update 14 - Holograms", {
         "All old accessories are gone. Accessories now has holograms: Holo Angel Wings, Holo Demon Wings, Circuit Wings, Holo Halo, Holo Horns, Holo Crown, Gyro Rings, Orbit Shards, Scan Ring and Floor Sigil. Wings carry nothing on the head.",
         "Hologram shimmer (a scan band climbing the body, flicker, glitches) with a Hologram strength slider, plus pixel and spark particles. Four ready looks: Holo Seraph, Holo Demon, Holo Cyber and Holo Full.",
         "Catalog: a button Take everything off takes off every accessory, shirt, pants and face you wear, and the catalog items too. Put everything back returns your own outfit.",
@@ -41930,7 +44725,7 @@ local CFG_DIR = "AfraidSide/configs"
 local AUTO_FILE = "AfraidSide/autoload.txt"
 local hasFs = type(writefile) == "function" and type(readfile) == "function" and type(isfolder) == "function" and type(makefolder) == "function"
 local cfgPickCtl
-local SKIP_SAVE = { fvOn = true, cfgName = true, cfgPick = true, cfgCode = true, cfgKeep = true, catQ = true, catId = true, lkCode = true, customId = true, constStarsN = true, glyphOn = true, mmAutoKill = true, mmAutoMurder = true }
+local SKIP_SAVE = { fvOn = true, cfgName = true, cfgPick = true, cfgCode = true, cfgKeep = true, catQ = true, catId = true, lang = true, lkCode = true, customId = true, constStarsN = true, glyphOn = true, mmAutoKill = true, mmAutoMurder = true }
 local CFGC = MISC.CFGC
 CFGC.skip = SKIP_SAVE
 
@@ -42091,6 +44886,16 @@ end
 
 local tCfg = UITab("Config", "ic_config", "set")
 local unload
+do
+    local LANG = UIX.LANG
+    local ls = tCfg:Section("L", "Language / Язык", nil)
+    ls:Segment("lang", "Menu / Меню", LANG.names, LANG.nameOf(LANG.current()), function(name) LANG.set(LANG.codeOf(name)) end)
+    LANG.onChange(function(code)
+        local shown = LANG.nameOf(code)
+        if cfg.lang ~= shown and Flags.lang then Flags.lang:Set(shown, true) end
+    end)
+    ls:Label("The language is kept on its own and is never saved in a config: loading a config, importing a code or switching configs does not change it.")
+end
 do
     local s = tCfg:Section("L", "Configs", nil)
     s:TextBox("cfgName", "Name", "config name", D.cfgName)
