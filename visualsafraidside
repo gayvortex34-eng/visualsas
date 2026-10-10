@@ -23883,7 +23883,13 @@ d([[Import pasted code]], [[Импортировать вставленный к
 d([[Import and save under the name on the left]], [[Импортировать и сохранить под названием слева]])
 d([[Clear the field]], [[Очистить поле]])
 
-d([[Update 15 (newest) - Light, catalog, Russian]], [[Обновление 15 (новое) — свет, каталог, язык]])
+d([[Update 16 (newest) - Korblox and catalog fixes]], [[Обновление 16 (новое) — Korblox и исправления каталога]])
+d([[- Korblox: the bone leg no longer floats in the air (seen in R6 games such as The Strongest Battlegrounds). Its parts now follow your real leg on every frame instead of hanging on welds that the game could ignore.]], [[- Korblox: костяная нога больше не висит в воздухе (это было в R6-играх вроде The Strongest Battlegrounds). Её детали теперь каждый кадр следуют за вашей настоящей ногой, а не держатся на соединениях, которые игра могла игнорировать.]])
+d([[- Korblox now works on both rigs. R15: the real mesh (Auto). R6: the armoured bone leg, or the original Korblox CharacterMesh with Method = Mesh ID. A refused or unusable R6 leg is reported in the status line (pick Bone leg then).]], [[- Korblox теперь работает на обоих ригах. R15: настоящий меш (Авто). R6: бронированная костяная нога или оригинальный CharacterMesh Korblox при «Способ = Mesh ID». Если R6-нога отклонена или не подходит, об этом сообщает строка состояния (тогда выберите «Костяная нога»).]])
+d([[- Catalog: the Hair filter (and any other type that is rare among the best sellers) now adds its own search word when the first look finds almost nothing, so it lists real hair instead of Nothing found.]], [[- Каталог: фильтр «Волосы» (и любой другой тип, который редко попадает в топ продаж) теперь добавляет своё поисковое слово, если с первого раза почти ничего не найдено, и показывает настоящие волосы вместо «Ничего не найдено».]])
+d([[- Catalog: the character preview puts every joint at rest, so it shows a plain standing body whatever pose you are in, frames tall or small characters by their real size and preloads the meshes before drawing them.]], [[- Каталог: превью персонажа ставит все суставы в положение покоя, поэтому показывает обычное стоящее тело в любой позе, подбирает масштаб для высоких и маленьких персонажей и заранее загружает меши перед отрисовкой.]])
+d([[- Catalog: if item pictures do not draw on your client, they are downloaded through the thumbnails API and shown from a file. Where nothing can be loaded a coloured tile with the first letter is shown instead.]], [[- Каталог: если иконки предметов не рисуются на вашем клиенте, они скачиваются через API миниатюр и показываются из файла. Там, где ничего загрузить нельзя, вместо иконки показывается цветная плитка с первой буквой.]])
+d([[Update 15 - Light, catalog, Russian]], [[Обновление 15 — свет, каталог, язык]])
 d([[- The holograms are now made of light: thin glowing lines with a white core and a faint fill, like the old light wings but in 3D, so they look the same from the front, the side and the back. Holo Angel Wings are rebuilt from glowing feathers.]], [[- Голограммы теперь сделаны из света: тонкие светящиеся линии с белой сердцевиной и слабой заливкой, как старые световые крылья, но в 3D — поэтому они одинаково выглядят спереди, сбоку и сзади. Крылья Holo Angel пересобраны из светящихся перьев.]])
 d([[- New: Holo Beam Wings (the old fan of light lines, improved) and the quick look Holo Angelic (Beam Wings + Halo).]], [[- Новое: Holo Beam Wings (прежний веер из линий света, улучшенный) и быстрый образ Holo Angelic (Beam Wings + нимб).]])
 d([[- New slider Accessories > Hologram body: 0 shows only the lines of light, higher values bring back the glass-like fill. The big soft glow sprites were made smaller so they are not cut by your body from the front.]], [[- Новый ползунок «Аксессуары > Тело голограммы»: 0 оставляет только линии света, большие значения возвращают стеклянную заливку. Большие мягкие световые пятна уменьшены, чтобы тело не обрезало их спереди.]])
@@ -24181,7 +24187,7 @@ d([[Headless hides the head and face.]], [[«Без головы» скрыва�
 d([[Mesh ID]], [[ID меша]])
 d([[Bone leg]], [[Костяная нога]])
 d([[Bone leg glow colour]], [[Цвет свечения костяной ноги]])
-d([[Korblox uses the community mesh ids when your executor may write MeshId, otherwise it builds an armoured bone leg from parts (works everywhere).]], [[Korblox использует меши сообщества, если ваш эксплойт может записывать MeshId, иначе собирает бронированную костяную ногу из деталей (работает везде).]])
+d([[Works on R15 and R6. Auto: R15 uses the community mesh ids when your executor may write MeshId; otherwise (and always on R6) it builds an armoured bone leg from parts that follows your real leg every frame. Mesh ID on R6 uses the original Korblox CharacterMesh. Bone leg forces the armoured leg on any rig.]], [[Работает на R15 и R6. Авто: на R15 используются меши сообщества, если ваш эксплойт может записывать MeshId; иначе (и всегда на R6) собирается бронированная костяная нога из деталей, которая каждый кадр следует за вашей настоящей ногой. «Mesh ID» на R6 применяет оригинальный CharacterMesh Korblox. «Костяная нога» включает бронированную ногу на любом риге.]])
 r([[^Others: (%d+) in range %((%d+) st%), effects on (%d+)  |  accessories (%d+), auras (%d+)$]], [[Другие: в радиусе {1} ({2} ст.), эффекты у {3}  |  аксессуаров {4}, аур {5}]])
 
 d([[Quick looks]], [[Быстрые образы]])
@@ -24675,6 +24681,7 @@ d([[scroll for more]], [[прокрутите, чтобы увидеть ещё]
 d([[that is everything]], [[это всё]])
 d([[Loading...]], [[Загрузка...]])
 d([[Loading more...]], [[Загружаю ещё...]])
+d([[Searching more closely...]], [[Ищу точнее...]])
 r([[^Searching%.%.%. (%d+) found, (%d+) checked$]], [[Поиск... найдено: {1}, проверено: {2}]])
 d([[Roblox is rate limiting the catalog, retrying...]], [[Roblox ограничивает запросы к каталогу, пробую снова...]])
 r([[^Could not load the catalog: (.+)$]], [[Не удалось загрузить каталог: {1}]])
@@ -24734,6 +24741,8 @@ d([[Korblox: bone leg (Roblox did not load the real mesh)]], [[Korblox: кост
 d([[Korblox: bone leg (built from parts)]], [[Korblox: костяная нога (собрана из деталей)]])
 d([[Korblox: loading the mesh...]], [[Korblox: загрузка меша...]])
 d([[Korblox: real mesh applied (community ids)]], [[Korblox: настоящий меш применён (ID сообщества)]])
+d([[Korblox: R6 real leg applied (CharacterMesh)]], [[Korblox: настоящая нога R6 применена (CharacterMesh)]])
+d([[Korblox: this R6 body has its own limb meshes - pick Bone leg]], [[Korblox: у этого R6-тела свои меши конечностей — выберите «Костяная нога»]])
 d([[Shirt]], [[Рубашка]])
 d([[T-Shirt]], [[Футболка]])
 d([[Pants]], [[Штаны]])
@@ -38795,6 +38804,72 @@ local function mannequin()
     return m, -2.8
 end
 
+local function restPose(clone, root)
+    local joints = {}
+    for _, d in ipairs(clone:GetDescendants()) do
+        if d:IsA("Motor6D") or d:IsA("Weld") then
+            local a, b = d.Part0, d.Part1
+            if a and b and a ~= b and a:IsA("BasePart") and b:IsA("BasePart") and a:IsDescendantOf(clone) and b:IsDescendantOf(clone) then
+                joints[#joints + 1] = d
+            end
+        end
+    end
+    if #joints == 0 then return 0 end
+    local solved = { [root] = root.CFrame }
+    local pending, rounds, count = joints, 0, 0
+    while #pending > 0 and rounds < 60 do
+        rounds = rounds + 1
+        local waiting = {}
+        for _, j in ipairs(pending) do
+            local a, b = j.Part0, j.Part1
+            local c0, c1 = j.C0, j.C1
+            if solved[a] and not solved[b] then
+                solved[b] = solved[a] * c0 * c1:Inverse()
+                count = count + 1
+            elseif solved[b] and not solved[a] then
+                solved[a] = solved[b] * c1 * c0:Inverse()
+                count = count + 1
+            elseif not solved[a] and not solved[b] then
+                waiting[#waiting + 1] = j
+            end
+        end
+        if #waiting == #pending then break end
+        pending = waiting
+    end
+    for part, cf in pairs(solved) do
+        if part ~= root then part.CFrame = cf end
+    end
+    return count
+end
+
+local function measure(clone)
+    local blo, bhi, thi
+    local bodyN = 0
+    for _, d in ipairs(clone:GetDescendants()) do
+        if d:IsA("BasePart") and d.Transparency < 0.95 and d.Name ~= "HumanoidRootPart" then
+            local cf, sz = d.CFrame, d.Size
+            local lo, hi
+            for sx = -1, 1, 2 do
+                for sy = -1, 1, 2 do
+                    for sz2 = -1, 1, 2 do
+                        local y = cf:PointToWorldSpace(V3(sx * sz.X / 2, sy * sz.Y / 2, sz2 * sz.Z / 2)).Y
+                        lo = lo and math.min(lo, y) or y
+                        hi = hi and math.max(hi, y) or y
+                    end
+                end
+            end
+            thi = thi and math.max(thi, hi) or hi
+            if d.Parent == clone then
+                bodyN = bodyN + 1
+                blo = blo and math.min(blo, lo) or lo
+                bhi = bhi and math.max(bhi, hi) or hi
+            end
+        end
+    end
+    if bodyN < 5 or not blo or not bhi or bhi - blo < 0.5 or bhi - blo > 400 then return nil end
+    return blo, bhi, thi or bhi
+end
+
 local function acquireRig(parent)
     local char = lp.Character
     local clone
@@ -38806,7 +38881,7 @@ local function acquireRig(parent)
             char.Archivable = old
         end)
     end
-    local feetY = -3
+    local feetY, midY, topY, k = -3, nil, nil, 1
     if clone and clone:FindFirstChild("HumanoidRootPart") and clone:FindFirstChild("Head") then
         local hum = char:FindFirstChildOfClass("Humanoid")
         for _, d in ipairs(clone:GetDescendants()) do
@@ -38820,8 +38895,19 @@ local function acquireRig(parent)
         local hrp = clone:FindFirstChild("HumanoidRootPart")
         local hy = hum and (hum.RigType == Enum.HumanoidRigType.R6 and 3 or (hum.HipHeight + hrp.Size.Y / 2)) or 3
         feetY = -hy
+        local okRest = pcall(restPose, clone, hrp)
         clone.Parent = parent
         pcall(function() clone:PivotTo(CF(0, 0, 0)) end)
+        if okRest then
+            local okM, blo, bhi, thi = pcall(measure, clone)
+            if okM and blo then
+                feetY, midY, topY = blo, (blo + bhi) / 2 + 0.15, thi
+                k = math.clamp((bhi - blo) / 5.1, 0.35, 8)
+            end
+        end
+        task.spawn(function()
+            pcall(function() game:GetService("ContentProvider"):PreloadAsync({ clone }) end)
+        end)
     else
         clone = nil
         local m, fy = mannequin()
@@ -38829,7 +38915,7 @@ local function acquireRig(parent)
         clone.Parent = parent
     end
     local hrp = clone:FindFirstChild("HumanoidRootPart")
-    return clone, { char = clone, hrp = hrp, feetY = feetY }
+    return clone, { char = clone, hrp = hrp, feetY = feetY, midY = midY, topY = topY, k = k }
 end
 
 local function proj(camCF, fov, W, H, p)
@@ -38880,11 +38966,12 @@ function M.mountPreview(frame, opts)
         V.rig = ACC.rigOf(V.rec)
         V.char = lp.Character
         local g = V.rec.feetY or -3
-        local disc = mk("Part", { Name = "stage", Shape = Enum.PartType.Cylinder, Size = V3(0.12, 5.2, 5.2), Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false,
+        local k = V.rec.k or 1
+        local disc = mk("Part", { Name = "stage", Shape = Enum.PartType.Cylinder, Size = V3(0.12, 5.2 * k, 5.2 * k), Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false,
             Color = T.acc or Color3.fromRGB(150, 98, 255), Material = Enum.Material.Neon, Transparency = 0.7, CFrame = CF(0, g - 0.02, 0) * ANGc(0, 0, math.pi / 2) }, V.model)
         V.disc = disc
-        V.center = V3(0, g * 0.5 + 1.3, 0)
-        V.baseDist = 10.5
+        V.center = V3(0, V.rec.midY or (g * 0.5 + 1.3), 0)
+        V.baseDist = 10.5 * k
         V.accSig = nil
         V.nextRig = os.clock() + 3
     end
@@ -38918,7 +39005,7 @@ function M.mountPreview(frame, opts)
         if V.accFolder then pcall(function() V.accFolder:Destroy() end); V.accFolder = nil end
         V.set = nil
         V.empty.Visible = (#nm == 0) and EMPTY ~= ""
-        if #nm == 0 or not V.rig then V.dist = 10.5; return end
+        if #nm == 0 or not V.rig then V.dist = V.baseDist or 10.5; return end
         local fold = mk("Folder", { Name = "acc" }, V.vf)
         local set = { names = nm, pcs = pcs, parts = {} }
         for i, p in ipairs(pcs) do
@@ -38933,14 +39020,15 @@ function M.mountPreview(frame, opts)
         local att = {}
         for k, a in pairs(V.rig.att) do att[k] = a.p.CFrame * a.o end
         local lay = ACC.layout(pcs, att, 0, { speed = 0, air = false })
-        local ext = 3.4
+        local kk = V.rec and V.rec.k or 1
+        local ext = 3.4 * kk
         for i, c in ipairs(lay) do
             if not pcs[i].ghost then
                 local d = c.Position - V.center
                 ext = math.max(ext, math.abs(d.Y) + 0.2, math.sqrt(d.X * d.X + d.Z * d.Z) * 0.92)
             end
         end
-        V.dist = math.clamp(ext * 3.05, 10.5, 48)
+        V.dist = math.clamp(ext * 3.05, 10.5 * kk, 48 * kk)
     end
 
     function V.update(t, dt)
@@ -39013,7 +39101,9 @@ function M.mountEsp(frame)
         V.char = lp.Character
         local g = V.rec.feetY or -3
         V.feet = g
-        V.center = V3(0, g * 0.5 + 1.3, 0)
+        V.center = V3(0, V.rec.midY or (g * 0.5 + 1.3), 0)
+        V.top = V.rec.topY
+        V.k = V.rec.k or 1
         V.nextRig = os.clock() + 3
     end
 
@@ -39029,11 +39119,11 @@ function M.mountEsp(frame)
         if W < 10 or H < 10 then return end
         local fov = 36
         local yaw = math.sin(t * 0.7) * 0.28
-        local d = 12.5
+        local d = 12.5 * (V.k or 1)
         local eye = V.center + V3(math.sin(yaw), 0.05, -math.cos(yaw)) * d
         local camCF = CFrame.lookAt(eye, V.center)
         V.cam.CFrame = camCF
-        local topY, botY = V.center.Y + 3.0, V.feet
+        local topY, botY = (V.top and V.top + 0.5) or (V.center.Y + 3.0), V.feet
         local x1, y1 = proj(camCF, fov, W, H, V3(0, topY, 0))
         local x2, y2 = proj(camCF, fov, W, H, V3(0, botY, 0))
         if not (x1 and x2) then return end
@@ -39239,13 +39329,14 @@ local function hasId(val, id)
     return string.find(tostring(val), id, 1, true) ~= nil
 end
 
-local function watchMesh(k, part)
+local function watchMesh(k, part, want)
     local pre = { ok = false, fail = false, done = false }
     k.pre = pre
+    want = tostring(want or KOR.meshId)
     task.spawn(function()
         pcall(function()
             game:GetService("ContentProvider"):PreloadAsync({ part }, function(id, status)
-                if hasId(id, KOR.meshId) then
+                if hasId(id, want) then
                     if status == Enum.AssetFetchStatus.Success then
                         pre.ok = true
                     elseif status == Enum.AssetFetchStatus.Failure or status == Enum.AssetFetchStatus.TimedOut then
@@ -39325,9 +39416,18 @@ local function meshHealthy(k, parts)
     return parts[1] == k.u and parts[2] == k.l and parts[3] == k.f and k.u.Parent ~= nil
 end
 
+local function cmeshUsable(leg)
+    if not leg or leg:IsA("MeshPart") then return false end
+    for _, c in ipairs(leg:GetChildren()) do
+        if c:IsA("DataModelMesh") then return false end
+    end
+    return true
+end
+
 local function charMesh(rec, k)
     local char = rec.char
     if k.cm and k.cm.Parent == char then return true end
+    if k.cm then pcall(function() k.cm:Destroy() end); k.cm = nil end
     local ok = pcall(function()
         local cm = Instance.new("CharacterMesh")
         cm.Name = TAG .. "korblox"
@@ -39337,6 +39437,10 @@ local function charMesh(rec, k)
         cm.Parent = char
         k.cm = cm
     end)
+    if ok and k.cm then
+        k.pre, k.t0 = nil, os.clock()
+        watchMesh(k, k.cm, KOR.r6mesh)
+    end
     return ok and k.cm ~= nil
 end
 
@@ -39353,7 +39457,8 @@ local function bonePieces(r15, segs, hue)
         L = { 2, 0, segs[2].Size.Y }
         Ft = { 3, 0, segs[3].Size.Y }
     else
-        U = { 1, 0.55, 0.9 }; L = { 1, -0.45, 0.9 }; Ft = { 1, -0.93, 0.14 }
+        local sy = math.clamp(segs[1].Size.Y / 2, 0.4, 3)
+        U = { 1, 0.55 * sy, 0.9 * sy }; L = { 1, -0.45 * sy, 0.9 * sy }; Ft = { 1, -0.93 * sy, 0.14 * sy }
     end
     local sU, yU, hU = U[1], U[2], U[3]
     local sL, yL, hL = L[1], L[2], L[3]
@@ -39376,29 +39481,38 @@ local function bonePieces(r15, segs, hue)
     return out
 end
 
+local function boneFollow(k)
+    local pieces = k.pieces
+    if not pieces then return end
+    for i = 1, #pieces do
+        local pc = pieces[i]
+        local seg = pc.seg
+        if seg.Parent ~= nil then
+            local want = seg.CFrame * pc.cf
+            if pc.part.CFrame ~= want then pc.part.CFrame = want end
+        end
+    end
+end
+
 local function boneBuild(rec, k, parts)
     local r15 = #parts == 3
     local list = bonePieces(r15, parts, cfg.avaKorH or 275)
     local model = Instance.new("Model")
     model.Name = TAG .. "bone"
+    local pieces = {}
     for _, p in ipairs(list) do
         local seg = parts[p.seg]
         local part = ACC.newPart({ shape = p.shape, size = p.size, tr = 0 })
         part.Color = p.col
         part.Material = p.mat
+        part.Anchored = true
         part.CFrame = seg.CFrame * p.cf
         part.Parent = model
-        local w = Instance.new("Weld")
-        w.Name = TAG .. "w"
-        w.Part0 = seg
-        w.Part1 = part
-        w.C0 = p.cf
-        w.C1 = CFrame.new()
-        w.Parent = part
+        pieces[#pieces + 1] = { part = part, seg = seg, cf = p.cf }
     end
     for _, seg in ipairs(parts) do stash(k.map, seg, "Transparency", 1) end
     model.Parent = FX.folder()
-    k.model, k.segs, k.kind = model, parts, "bone"
+    k.model, k.segs, k.pieces, k.kind = model, parts, pieces, "bone"
 end
 
 local function korSig() return tostring(cfg.avaKorMode) .. "|" .. tostring(math.floor((cfg.avaKorH or 275) + 0.5)) end
@@ -39418,7 +39532,8 @@ end
 local KOR_TEXT = {
     mesh = "Korblox: real mesh applied (community ids)",
     wait = "Korblox: loading the mesh...",
-    cmesh = "Korblox: R6 CharacterMesh added (community ids)",
+    cmesh = "Korblox: R6 real leg applied (CharacterMesh)",
+    r6custom = "Korblox: this R6 body has its own limb meshes - pick Bone leg",
     bone = "Korblox: bone leg (built from parts)",
     boneAuto = "Korblox: bone leg (Roblox did not load the real mesh)",
     fail = "Korblox: Roblox did not load the real mesh - pick Bone leg",
@@ -39487,12 +39602,15 @@ local function korOn(rec)
                 korStatus(rec, "fail", true)
             end
         else
-            if mode == "Mesh ID" and charMesh(rec, k) then
+            local usable = cmeshUsable(parts[1])
+            if mode == "Mesh ID" and usable and charMesh(rec, k) then
                 k.kind = "cmesh"
                 korStatus(rec, "cmesh")
+                refreshPreview()
+                return true
             elseif mode == "Mesh ID" then
                 k.kind = "fail"
-                korStatus(rec, "fail", true)
+                korStatus(rec, usable and "fail" or "r6custom", true)
             else
                 boneBuild(rec, k, parts)
                 korStatus(rec, "bone")
@@ -39541,7 +39659,19 @@ local function korOn(rec)
             for _, seg in ipairs(parts) do stash(k.map, seg, "Transparency", 1) end
         end
     elseif k.kind == "cmesh" then
+        local pre = k.pre
+        local refused = pre and pre.fail and not pre.ok
+        if refused or not cmeshUsable(parts[1]) then
+            if k.cm then pcall(function() k.cm:Destroy() end); k.cm = nil end
+            k.pre = nil
+            k.kind = "fail"
+            korStatus(rec, refused and "fail" or "r6custom", true)
+            refreshPreview()
+            return false
+        end
         charMesh(rec, k)
+        if pre and (pre.ok or os.clock() - (k.t0 or 0) >= 2.5) then return false end
+        return pre == nil or not pre.done
     end
     return false
 end
@@ -39767,6 +39897,13 @@ local function tickRec(rec)
 end
 
 function M.step(dt)
+    for _, s in pairs(ST) do
+        local k = s.k
+        if k and k.kind == "bone" then
+            local ok, e = pcall(boneFollow, k)
+            if not ok then report("avatar", e) end
+        end
+    end
     if dirty.ava then dirty.ava = false; AV.next = 0 end
     local t = os.clock()
     if t < AV.next then return end
@@ -39818,6 +39955,7 @@ local GAP_S = 0.7
 local MAX_WORN = 12
 local MAX_SCANS = 4
 local FILL_TO = 18
+local HINT_BELOW = 8
 local GAP = 6
 local MAX_ITEMS = 300
 local COLS, ROWS = 5, 5
@@ -39830,14 +39968,14 @@ local HOSTS = { "https://catalog.roblox.com", "https://catalog.roproxy.com" }
 
 local TYPES = {
     { name = "All accessories", cat = 11 },
-    { name = "Hair", cat = 11, at = 41 },
-    { name = "Back", cat = 11, at = 46 },
-    { name = "Hats", cat = 11, at = 8 },
-    { name = "Face", cat = 11, at = 42 },
-    { name = "Neck", cat = 11, at = 43 },
-    { name = "Shoulder", cat = 11, at = 44 },
-    { name = "Front", cat = 11, at = 45 },
-    { name = "Waist", cat = 11, at = 47 },
+    { name = "Hair", cat = 11, at = 41, kw = "hair", kwFirst = true },
+    { name = "Back", cat = 11, at = 46, kw = "back" },
+    { name = "Hats", cat = 11, at = 8, kw = "hat" },
+    { name = "Face", cat = 11, at = 42, kw = "face" },
+    { name = "Neck", cat = 11, at = 43, kw = "scarf" },
+    { name = "Shoulder", cat = 11, at = 44, kw = "shoulder" },
+    { name = "Front", cat = 11, at = 45, kw = "front" },
+    { name = "Waist", cat = 11, at = 47, kw = "belt" },
     { name = "Classic T-Shirts", cat = 3, sub = 55, subName = "ClassicTShirts", at = 2 },
     { name = "Classic Shirts", cat = 3, sub = 56, subName = "ClassicShirts", at = 11 },
     { name = "Classic Pants", cat = 3, sub = 57, subName = "ClassicPants", at = 12 },
@@ -39888,13 +40026,19 @@ local function httpFn()
     return nil
 end
 
+local function kwNow()
+    if S.q ~= "" then return S.q end
+    return S.hint or ""
+end
+
 local function buildUrl(host, cursor)
     local ty = typeOf()
     local p = { "Category=" .. ty.cat }
     if ty.sub then p[#p + 1] = "Subcategory=" .. (S.subName and ty.subName or tostring(ty.sub)) end
     p[#p + 1] = "Limit=" .. LIMIT
     p[#p + 1] = "SortType=" .. tostring(SORT_ID[cfg.catSort] or 2)
-    if S.q ~= "" then p[#p + 1] = "Keyword=" .. urlEncode(S.q) end
+    local kw = kwNow()
+    if kw ~= "" then p[#p + 1] = "Keyword=" .. urlEncode(kw) end
     if cursor and cursor ~= "" then p[#p + 1] = "cursor=" .. urlEncode(cursor) end
     if cfg.catFree and not S.noMax then p[#p + 1] = "MaxPrice=0" end
     return host .. "/v1/search/items/details?" .. table.concat(p, "&")
@@ -40148,8 +40292,7 @@ local function accept(d, ty)
         lim = type(d.itemRestrictions) == "table" and #d.itemRestrictions > 0 }
 end
 
-local function fetchPage(my, start)
-    local ty = typeOf()
+local function scanPages(my, start, ty)
     local scanMore = ty.at ~= nil or cfg.catFree
     local items, cursor, scans, seen = {}, start, 0, {}
     S.scanned = 0
@@ -40170,6 +40313,29 @@ local function fetchPage(my, start)
         if not cursor or #items >= FILL_TO or scans >= MAX_SCANS then return items, cursor, nil end
         setStatus("Searching... " .. #items .. " found, " .. S.scanned .. " checked")
     end
+end
+
+local function fetchPage(my, start)
+    local ty = typeOf()
+    local first = start == "" and not S.hintDone
+    if first then
+        S.hint = (ty.at and S.q == "" and ty.kwFirst) and ty.kw or nil
+    end
+    local items, cursor, err = scanPages(my, start, ty)
+    if first and items then
+        if not S.hint and ty.at and ty.kw and S.q == "" and #items < HINT_BELOW then
+            S.hint = ty.kw
+            setStatus("Searching more closely...")
+            local i2, c2 = scanPages(my, "", ty)
+            if i2 and #i2 > #items then
+                items, cursor = i2, c2
+            else
+                S.hint = nil
+            end
+        end
+        S.hintDone = true
+    end
+    return items, cursor, err
 end
 
 local render, checkMore, paintMore
@@ -40208,6 +40374,7 @@ end
 function M.search()
     S.noMax = false
     S.subName = false
+    S.hint, S.hintDone = nil, false
     S.searchId = (S.searchId or 0) + 1
     S.eng = nil
     S.autoTried = true
@@ -41181,6 +41348,239 @@ end
 
 local function thumb(id) return "rbxthumb://type=Asset&id=" .. idStr(id) .. "&w=150&h=150" end
 
+local THUMB_DIR = "AfraidSide/thumbs"
+local THUMB_WAIT = 3.5
+local THUMB_HOSTS = { "https://thumbnails.roblox.com", "https://thumbnails.roproxy.com" }
+local TH = { file = {}, dead = {}, retry = {}, queue = {}, qset = {}, watch = setmetatable({}, { __mode = "k" }), working = false, nextTick = 0, fs = nil }
+M.TH = TH
+
+local function thFs()
+    if TH.fs ~= nil then return TH.fs end
+    local ga = (type(getcustomasset) == "function" and getcustomasset) or (type(getsynasset) == "function" and getsynasset) or nil
+    if ga ~= nil and type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function" then
+        pcall(function()
+            if type(isfolder) == "function" and type(makefolder) == "function" then
+                if not isfolder("AfraidSide") then makefolder("AfraidSide") end
+                if not isfolder(THUMB_DIR) then makefolder(THUMB_DIR) end
+            end
+        end)
+        TH.fs = { ga = ga }
+    else
+        TH.fs = false
+    end
+    return TH.fs
+end
+
+local function thFromDisk(id, fs)
+    local path = THUMB_DIR .. "/" .. idStr(id) .. ".png"
+    local good = false
+    pcall(function()
+        if isfile(path) then
+            local raw = readfile(path)
+            good = type(raw) == "string" and #raw > 80 and string.sub(raw, 2, 4) == "PNG"
+        end
+    end)
+    if not good then return false end
+    local ok, url = pcall(fs.ga, path)
+    if ok and type(url) == "string" and url ~= "" then
+        TH.file[id] = url
+        return true
+    end
+    return false
+end
+
+local function rawGet(url)
+    local kinds = {}
+    if httpFn() then kinds[#kinds + 1] = "request" end
+    kinds[#kinds + 1] = "httpget"
+    for _, kind in ipairs(kinds) do
+        local code, body = httpOnce({ kind = kind }, url)
+        if code == 200 and type(body) == "string" and body ~= "" then return body end
+    end
+    return nil
+end
+
+local function thBatch(ids)
+    local q = "/v1/assets?assetIds=" .. table.concat(ids, ",") .. "&returnPolicy=PlaceHolder&size=150x150&format=Png&isCircular=false"
+    for i, host in ipairs(THUMB_HOSTS) do
+        if i == 1 or cfg.catMirror then
+            local body = rawGet(host .. q)
+            if body then
+                local ok, d = pcall(function() return HttpService:JSONDecode(body) end)
+                if ok and type(d) == "table" and type(d.data) == "table" then return d.data end
+            end
+        end
+    end
+    return nil
+end
+
+local function thRun(batch)
+    local fs = thFs()
+    if not fs then
+        for _, id in ipairs(batch) do TH.dead[id] = os.clock() end
+        return
+    end
+    local need = {}
+    for _, id in ipairs(batch) do
+        if not thFromDisk(id, fs) then need[#need + 1] = idStr(id) end
+    end
+    if #need == 0 then return end
+    local rows = thBatch(need)
+    local got = {}
+    if rows then
+        for _, r in ipairs(rows) do
+            local id = type(r) == "table" and tonumber(r.targetId) or nil
+            if id then
+                if r.state == "Pending" then
+                    TH.retry[id] = (TH.retry[id] or 0) + 1
+                    if TH.retry[id] <= 3 then
+                        got[id] = "later"
+                        task.delay(2.5, function()
+                            if not TH.qset[id] then
+                                TH.qset[id] = true
+                                TH.queue[#TH.queue + 1] = id
+                                if TH.work then TH.work() end
+                            end
+                        end)
+                    end
+                elseif type(r.imageUrl) == "string" and r.imageUrl ~= "" then
+                    local bin = rawGet(r.imageUrl)
+                    if bin and #bin > 80 and string.sub(bin, 2, 4) == "PNG" then
+                        local path = THUMB_DIR .. "/" .. idStr(id) .. ".png"
+                        if pcall(writefile, path, bin) then
+                            local ok2, url = pcall(fs.ga, path)
+                            if ok2 and type(url) == "string" and url ~= "" then
+                                TH.file[id] = url
+                                got[id] = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for _, sid in ipairs(need) do
+        local id = tonumber(sid)
+        if not got[id] then TH.dead[id] = os.clock() end
+    end
+end
+
+TH.work = function()
+    if TH.working then return end
+    TH.working = true
+    task.spawn(function()
+        local idle = 0
+        while idle < 3 do
+            local batch = {}
+            while #TH.queue > 0 and #batch < 30 do
+                local id = table.remove(TH.queue, 1)
+                TH.qset[id] = nil
+                if not TH.file[id] then batch[#batch + 1] = id end
+            end
+            if #batch == 0 then
+                idle = idle + 1
+                task.wait(0.5)
+            else
+                idle = 0
+                local ok, e = pcall(thRun, batch)
+                if not ok then
+                    for _, id in ipairs(batch) do TH.dead[id] = os.clock() end
+                    report("catalog", e)
+                end
+                task.wait(0.4)
+            end
+        end
+        TH.working = false
+    end)
+end
+
+local function thEnqueue(id)
+    if TH.qset[id] or TH.file[id] or thFs() == false then return end
+    local d = TH.dead[id]
+    if d and os.clock() - d < 40 then return end
+    TH.qset[id] = true
+    TH.queue[#TH.queue + 1] = id
+    TH.work()
+end
+
+local function makePh(img, big)
+    local ph = new("TextLabel", { Name = "ph", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0.2, BorderSizePixel = 0, Text = "", TextSize = big and 24 or 13, Font = F.bold,
+        TextColor3 = Color3.fromRGB(238, 234, 252), TextTransparency = 0.1, Visible = false, ZIndex = 2 }, img)
+    corner(ph, big and 9 or 6)
+    return ph
+end
+
+local function phPaint(ph, id, name)
+    if not ph then return end
+    local c = string.match(tostring(name or ""), "%w")
+    if not c then
+        local ok, cp = pcall(utf8.codepoint, tostring(name or ""), 1)
+        c = ok and utf8.char(cp) or "?"
+    end
+    ph.Text = string.upper(c)
+    ph.BackgroundColor3 = Color3.fromHSV((id % 97) / 97, 0.4, 0.4)
+end
+
+local function thReset(img, ph)
+    TH.watch[img] = nil
+    if ph then ph.Visible = false end
+    img.Image = ""
+end
+
+local function thShow(img, id, ph)
+    local url = TH.file[id]
+    if url then
+        img.Image = url
+        if ph then ph.Visible = false end
+        TH.watch[img] = nil
+        return
+    end
+    img.Image = thumb(id)
+    TH.watch[img] = { id = id, t0 = os.clock(), ph = ph, stage = 1 }
+end
+
+local function thStep(t)
+    if t < TH.nextTick then return end
+    TH.nextTick = t + 0.35
+    for img, w in pairs(TH.watch) do
+        if img.Parent == nil then
+            TH.watch[img] = nil
+        else
+            local loaded = false
+            pcall(function() loaded = img.IsLoaded == true end)
+            local age = t - w.t0
+            if loaded then
+                if w.ph then w.ph.Visible = false end
+                TH.watch[img] = nil
+            else
+                if w.ph and age > 0.8 then w.ph.Visible = true end
+                if w.stage == 1 and age > THUMB_WAIT then
+                    w.stage = 2
+                    w.t0 = t
+                    if TH.file[w.id] then
+                        img.Image = TH.file[w.id]
+                        w.stage = 3
+                    else
+                        thEnqueue(w.id)
+                    end
+                elseif w.stage == 2 then
+                    if TH.file[w.id] then
+                        img.Image = TH.file[w.id]
+                        w.stage = 3
+                        w.t0 = t
+                    elseif age > 60 then
+                        TH.watch[img] = nil
+                    else
+                        thEnqueue(w.id)
+                    end
+                elseif w.stage == 3 and age > 5 then
+                    TH.watch[img] = nil
+                end
+            end
+        end
+    end
+end
+
 local function scaleNow()
     local ok, s = pcall(UIX.curScale)
     if ok and type(s) == "number" and s > 0.05 then return s end
@@ -41214,6 +41614,7 @@ local function makeCell(ui, idx)
     bindTheme(st, "Color", "line")
     local img = new("ImageLabel", { Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 0, 60), BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Fit,
         BorderSizePixel = 0 }, c)
+    local ph = makePh(img, true)
     local nm = label(c, "", 10, "text", F.med, XL)
     nm.TextYAlignment = Enum.TextYAlignment.Top; nm.TextTruncate = Enum.TextTruncate.AtEnd
     local pr = label(c, "", 10, "dim", F.reg, XL)
@@ -41225,7 +41626,7 @@ local function makeCell(ui, idx)
     corner(badge, 9)
     local bt = label(badge, "\u{2713}", 12, "onacc", F.bold, XL)
     bt.Size = UDim2.fromScale(1, 1); bt.TextXAlignment = Enum.TextXAlignment.Center
-    local cell = { btn = c, img = img, nm = nm, pr = pr, tg = tg, badge = badge, st = st, item = nil, loaded = false }
+    local cell = { btn = c, img = img, ph = ph, nm = nm, pr = pr, tg = tg, badge = badge, st = st, item = nil, loaded = false }
     sizeCell(cell, ui.cw or 100, ui.chh or 110)
     c.MouseEnter:Connect(function()
         tw(st, TI.fast, { Color = T.acc, Transparency = 0.1 })
@@ -41267,7 +41668,8 @@ local function paintImages()
             local row = math.floor((i - 1) / u.cols)
             if row >= r0 and row <= r1 then
                 cell.loaded = true
-                cell.img.Image = thumb(cell.item.id)
+                phPaint(cell.ph, cell.item.id, cell.item.name)
+                thShow(cell.img, cell.item.id, cell.ph)
             end
         end
     end
@@ -41347,7 +41749,7 @@ render = function()
         if cell.item ~= it then
             cell.item = it
             cell.loaded = false
-            cell.img.Image = ""
+            thReset(cell.img, cell.ph)
             cell.nm.Text = it.name
             cell.pr.Text = priceText(it) .. (it.lim and "  (limited)" or "")
             cell.tg.Text = AT_NAME[it.at] or ""
@@ -41359,6 +41761,7 @@ render = function()
         local cell = u.cells[i]
         cell.item = nil
         cell.loaded = false
+        thReset(cell.img, cell.ph)
         cell.btn.Visible = false
     end
     u.empty.Visible = n == 0
@@ -41412,8 +41815,11 @@ refreshWorn = function()
         local row = new("Frame", { Size = UDim2.new(1, 0, 0, 36), Position = UDim2.fromOffset(0, (i - 1) * 40), BorderSizePixel = 0 }, u.list)
         bindTheme(row, "BackgroundColor3", "off")
         corner(row, 9)
-        local im = new("ImageLabel", { Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(28, 28), BackgroundTransparency = 1, Image = thumb(w.id), ScaleType = Enum.ScaleType.Fit,
+        local im = new("ImageLabel", { Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(28, 28), BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Fit,
             BorderSizePixel = 0 }, row)
+        local wph = makePh(im, false)
+        phPaint(wph, w.id, w.name)
+        thShow(im, w.id, wph)
         local nm = label(row, w.name, 12, "text", F.med, XL)
         nm.Position = UDim2.fromOffset(40, 3); nm.Size = UDim2.new(1, -86, 0, 17); nm.TextTruncate = Enum.TextTruncate.AtEnd
         local sub = label(row, w.busy and "loading..." or (AT_NAME[w.at] or "accessory") .. "  |  " .. (w.note or ("id " .. idStr(w.id))), 10, "dim", F.reg, XL)
@@ -41862,6 +42268,7 @@ end
 
 function M.step(dt)
     local t = os.clock()
+    thStep(t)
     local P = M.panes
     if P then
         if P.dirty then
@@ -43776,7 +44183,7 @@ do
     k:Hue("avaKorH", "Bone leg glow colour", D.avaKorH)
     local ks = k:Label("")
     AVA.onKStatus = function(t) ks.Text = t end
-    k:Label("Korblox uses the community mesh ids when your executor may write MeshId, otherwise it builds an armoured bone leg from parts (works everywhere).")
+    k:Label("Works on R15 and R6. Auto: R15 uses the community mesh ids when your executor may write MeshId; otherwise (and always on R6) it builds an armoured bone leg from parts that follows your real leg every frame. Mesh ID on R6 uses the original Korblox CharacterMesh. Bone leg forces the armoured leg on any rig.")
 
     local c = tAva:Section("R", "Copy someone's look", "ava")
     local dd = c:Dropdown("avaPick", "Player", AVA.playerLabels(), D.avaPick, false)
@@ -44480,7 +44887,14 @@ local tPlayerPg = UITab("Player", "ic_players", nil)
 local tMiscPg = UITab("Misc", "ic_sliders", nil)
 
 local NEWS = {
-    { "Update 15 (newest) - Light, catalog, Russian", {
+    { "Update 16 (newest) - Korblox and catalog fixes", {
+        "Korblox: the bone leg no longer floats in the air (seen in R6 games such as The Strongest Battlegrounds). Its parts now follow your real leg on every frame instead of hanging on welds that the game could ignore.",
+        "Korblox now works on both rigs. R15: the real mesh (Auto). R6: the armoured bone leg, or the original Korblox CharacterMesh with Method = Mesh ID. A refused or unusable R6 leg is reported in the status line (pick Bone leg then).",
+        "Catalog: the Hair filter (and any other type that is rare among the best sellers) now adds its own search word when the first look finds almost nothing, so it lists real hair instead of Nothing found.",
+        "Catalog: the character preview puts every joint at rest, so it shows a plain standing body whatever pose you are in, frames tall or small characters by their real size and preloads the meshes before drawing them.",
+        "Catalog: if item pictures do not draw on your client, they are downloaded through the thumbnails API and shown from a file. Where nothing can be loaded a coloured tile with the first letter is shown instead.",
+    } },
+    { "Update 15 - Light, catalog, Russian", {
         "The holograms are now made of light: thin glowing lines with a white core and a faint fill, like the old light wings but in 3D, so they look the same from the front, the side and the back. Holo Angel Wings are rebuilt from glowing feathers.",
         "New: Holo Beam Wings (the old fan of light lines, improved) and the quick look Holo Angelic (Beam Wings + Halo).",
         "New slider Accessories > Hologram body: 0 shows only the lines of light, higher values bring back the glass-like fill. The big soft glow sprites were made smaller so they are not cut by your body from the front.",
