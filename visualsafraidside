@@ -44387,6 +44387,68 @@ end
 local tPlayerPg = UITab("Player", "ic_players", nil)
 local tMiscPg = UITab("Misc", "ic_sliders", nil)
 
+local NEWS = {
+    { "Update 12 - everything in the side window (newest)", {
+        "Every function shows only its switch and key bind. Click the row: all its settings open in the window on the right.",
+        "Edit layout (Visuals > Client): drag the watermark, module list, notifications, keybinds, target HUD, health bar, info overlay and keystrokes.",
+        "Stretched screen with ratio presets: 1:1, 5:4, 4:3, 3:2, 16:10, 16:9, 21:9 and Custom (Visuals > Screen).",
+        "Lighter interface sounds and a Tone slider (Settings > Themes).",
+        "This What's new page (Misc).",
+    } },
+    { "Update 11 - side window, tabs, phone buttons", {
+        "Side settings window next to the menu for every function.",
+        "Five sidebar tabs: Combat, Visuals, Move, Misc, Settings.",
+        "Auto BDC: back dash cancel for The Strongest Battlegrounds (Combat).",
+        "Phone screen buttons: choose the size, drag them, lock them in place.",
+        "Stretched resolution as a screen option.",
+        "Darker, softer interface sounds.",
+    } },
+    { "Update 10 - Client panels and Fake visuals", {
+        "Client tab: module list, watermark, notifications, keybinds panel, target HUD, health bar.",
+        "Fake visuals: a decoy of your body that drifts, roams past other players and strikes with your tool.",
+        "Invisibility fixes: the held tool stays, you wait far away, the tool works after you leave.",
+        "Minecraft-style visuals and sounds: crosshair, hit marker, floating damage numbers, hurt flash.",
+    } },
+    { "Update 9 - Catalog, Avatar, themes", {
+        "Catalog: browse Roblox accessories and clothes, try them on, share your whole look as a code.",
+        "Avatar: Korblox leg, Headless, copy another player's look and restore yours.",
+        "Photo themes with moving backgrounds; restyled window, sidebar and top bar.",
+        "Sounds for switches and for opening / closing the menu.",
+    } },
+    { "Update 8 - Movement and configs", {
+        "Move tab: Fly, speed, jump power, infinite jump, dash, glide, wall climb, noclip, gravity, spin, air-walk platform, teleports, anti-void.",
+        "Config codes: share your config as a code, import someone else's (the content is detected automatically).",
+        "FFlags presets with a frame rate cap, and the Optimize page.",
+    } },
+    { "Update 7 - Accessories and stability", {
+        "3D accessories with a flight model for the wings.",
+        "Fixes for crashes when changing accessories and at start-up.",
+        "Analyzer script for finding game remotes.",
+    } },
+    { "Update 6 - Games and aim", {
+        "Murder Mystery 2: role ESP, silent aim, auto kill murderer, auto murderer.",
+        "Da Hood silent aim with FOV circle, target tag and line.",
+        "Aim assist with FOV circle, target info and line to the target.",
+    } },
+    { "Update 5 - effects", {
+        "ESP redesign with a live preview next to the settings.",
+        "Aura, Trail, Kill FX, World seals, Particles (snow, stars ...), Constellations.",
+        "Sky clarity, Post FX, Filters, Screen tools.",
+    } },
+    { "Updates 1-4 - the base", {
+        "Menu with themes, search and a round button for phones.",
+        "First visuals: sky boxes, bloom, colour correction, atmosphere, fog.",
+        "Smooth animations, optimisation and the Afraid Side logo.",
+    } },
+}
+local tNews = UITab("What's new", "ic_info", nil)
+do
+    for i, e in ipairs(NEWS) do
+        local s = tNews:Section(i % 2 == 1 and "L" or "R", e[1], nil)
+        for _, line in ipairs(e[2]) do s:Label("- " .. line) end
+    end
+end
+
 local tOpt = UITab("Optimize", "ic_optimize", "set")
 local optStats
 do
@@ -45016,7 +45078,7 @@ UIX.arrange({
         { sub = "World" }, "World", "Sky", "Post FX", "Particles", "Constellations",
         { sub = "Screen" }, "Screen", "Filters" } },
     { key = "move",     title = "Move",     icon = "ic_movement", hue = 150, items = { "Movement" } },
-    { key = "misc",     title = "Misc",     icon = "ic_sliders",  hue = 38,  items = { { sub = "Games" }, "MM2", "Da Hood", { sub = "Your functions" }, "Player", "Misc" } },
+    { key = "misc",     title = "Misc",     icon = "ic_sliders",  hue = 38,  items = { { sub = "Info" }, "What's new", { sub = "Games" }, "MM2", "Da Hood", { sub = "Your functions" }, "Player", "Misc" } },
     { key = "set",      title = "Settings", icon = "ic_settings", hue = 215, sat = 0.35, items = { "Binds", "Optimize", "FFlags", "Themes", "Config" } },
 })
 CFGC.setBase(cfg)
