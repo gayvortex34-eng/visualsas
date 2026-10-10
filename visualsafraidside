@@ -173,7 +173,7 @@ local D = {
 
     menuKey = "T", binds = {}, btns = {}, bindClick = true, accentH = 262, uiScale = 1, watermark = false, wmPos = "Top Right", wmScale = 1, wmName = true, wmLogo = true, wmFps = true, wmPing = true, wmClock = false, wmUser = false, wmX = -1, wmY = -1, splash = true, tgOpen = true,
     cfgName = "my_config", cfgPick = "", cfgCode = "", cfgKeep = true,
-    sfxOn = true, sfxVol = 0.6, sfxPack = "Soft", sfxSwitch = true, sfxMenu = true, sfxUi = true, sfxHitOn = false, sfxHit = "Pling", sfxKillOn = false, sfxKill = "Level up",
+    sfxOn = true, sfxVol = 0.6, sfxTone = 1, sfxPack = "Soft", sfxSwitch = true, sfxMenu = true, sfxUi = true, sfxHitOn = false, sfxHit = "Pling", sfxKillOn = false, sfxKill = "Level up",
     ffOn = false, ffPreset = "PC all-round", ffName = "", ffVal = "", stretchOn = false, stretchPreset = "4:3", stretchX = 1, stretchY = 0.75, stretchFlip = false,
     fpsOn = false, fpsCap = 144, fpsUnl = false,
 
@@ -235,7 +235,7 @@ local D = {
     mcTarget = false, mcTargetPos = "Under crosshair", mcTargetScale = 1, mcTargetRange = 260, mcTargetDist = 250, mcTargetKeep = 3,
     mcHp = false, mcHudY = 100,
 
-    hudOn = false, hudPos = "Top Left", hudStyle = "Pill", hudSize = 14,
+    hudMov = {}, hudSnap = true, hudOn = false, hudPos = "Top Left", hudStyle = "Pill", hudSize = 14,
     hudFps = true, hudPing = true, hudClock = false, hudSpeed = false, hudPos2 = false, hudPlayers = false,
     ksOn = false, ksPos = "Bottom Left", ksScale = 1,
     fltOn = false, fltName = "Anime Pop", fltAmt = 0.8,
@@ -20860,6 +20860,328 @@ end
 do
 
 local C, F, XL, XR, XC = UIX.C, UIX.F, UIX.XL, UIX.XR, UIX.XC
+local TI, tw, new, corner, stroke, pad = UIX.TI, UIX.tw, UIX.new, UIX.corner, UIX.stroke, UIX.pad
+local T, bindTheme, reg, alive = UIX.T, UIX.bindTheme, UIX.reg, UIX.alive
+local isPress, isMove, curScale, gui, viewport = UIX.isPress, UIX.isMove, UIX.curScale, UIX.gui, UIX.viewport
+
+local MOV = { items = {}, order = {}, editing = false, sel = nil, handles = {} }
+UIX.mov = MOV
+
+local LIM = 6000
+local SNAP_PX, MARGIN = 12, 10
+
+local function menuOpen() return UI.isOpen and UI.isOpen() == true end
+
+local function store()
+    if type(cfg.hudMov) ~= "table" then cfg.hudMov = {} end
+    return cfg.hudMov
+end
+
+function MOV.off(id)
+    local s = cfg.hudMov
+    if type(s) ~= "table" then return 0, 0 end
+    return tonumber(s[id .. "X"]) or 0, tonumber(s[id .. "Y"]) or 0
+end
+
+function MOV.udim(id, xs, xo, ys, yo)
+    local dx, dy = MOV.off(id)
+    return UDim2.new(xs, xo + dx, ys, yo + dy)
+end
+
+function MOV.set(id, dx, dy)
+    local s = store()
+    dx = clamp(math.floor((tonumber(dx) or 0) + 0.5), -LIM, LIM)
+    dy = clamp(math.floor((tonumber(dy) or 0) + 0.5), -LIM, LIM)
+    s[id .. "X"] = dx ~= 0 and dx or nil
+    s[id .. "Y"] = dy ~= 0 and dy or nil
+    mark("hud")
+end
+
+function MOV.moved(id)
+    local dx, dy = MOV.off(id)
+    return dx ~= 0 or dy ~= 0
+end
+
+function MOV.reset(id)
+    MOV.set(id, 0, 0)
+end
+
+function MOV.resetAll()
+    cfg.hudMov = {}
+    mark("hud")
+    if UIX.onLayout then pcall(UIX.onLayout) end
+end
+
+function MOV.count()
+    local n = 0
+    for _, id in ipairs(MOV.order) do
+        if MOV.moved(id) then n = n + 1 end
+    end
+    return n
+end
+
+function MOV.register(id, name, spec)
+    if not MOV.items[id] then MOV.order[#MOV.order + 1] = id end
+    MOV.items[id] = { id = id, name = name, on = spec.on, obj = spec.obj, rect = spec.rect, base = spec.base }
+end
+
+local function absRect(o)
+    local ok, x, y, w, h = pcall(function()
+        local p, s = o.AbsolutePosition, o.AbsoluteSize
+        return p.X, p.Y, s.X, s.Y
+    end)
+    if ok and type(w) == "number" and w > 1 and h > 1 then return x, y, w, h end
+end
+
+function MOV.union(list)
+    local x0, y0, x1, y1
+    for _, o in ipairs(list) do
+        if alive(o) then
+            local x, y, w, h = absRect(o)
+            if x then
+                x0 = x0 and math.min(x0, x) or x
+                y0 = y0 and math.min(y0, y) or y
+                x1 = x1 and math.max(x1, x + w) or (x + w)
+                y1 = y1 and math.max(y1, y + h) or (y + h)
+            end
+        end
+    end
+    if x0 then return x0, y0, x1 - x0, y1 - y0 end
+end
+
+function MOV.rect(id)
+    local it = MOV.items[id]
+    if not it then return nil end
+    if it.rect then
+        local ok, x, y, w, h = pcall(it.rect)
+        if ok and x then return x, y, w, h, true end
+    end
+    if it.obj then
+        local ok, o = pcall(it.obj)
+        if ok and o and alive(o) and o.Visible ~= false then
+            local x, y, w, h = absRect(o)
+            if x then return x, y, w, h, true end
+        end
+    end
+    if it.base then
+        local ok, pos, anc, size = pcall(it.base)
+        if ok and pos then
+            local vp = viewport()
+            local dx, dy = MOV.off(id)
+            local x = pos.X.Scale * vp.X + pos.X.Offset - anc.X * size.X + dx
+            local y = pos.Y.Scale * vp.Y + pos.Y.Offset - anc.Y * size.Y + dy
+            return x, y, size.X, size.Y, false
+        end
+    end
+end
+
+local function isOn(it)
+    local ok, v = pcall(it.on)
+    return ok and v == true
+end
+
+function MOV.active()
+    local out = {}
+    for _, id in ipairs(MOV.order) do
+        if isOn(MOV.items[id]) then out[#out + 1] = id end
+    end
+    return out
+end
+
+local host = new("Frame", { Name = "hudMovHost", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 60, Active = false, Visible = false }, gui)
+MOV.host = host
+local drag
+local ov
+
+local function snapAxis(v, size, span)
+    local c = { MARGIN, span - size - MARGIN, (span - size) / 2 }
+    local best, bd = v, SNAP_PX + 1
+    for _, t in ipairs(c) do
+        local d = math.abs(v - t)
+        if d < bd then best, bd = t, d end
+    end
+    return best
+end
+
+local function startDrag(id, input)
+    local x, y, w, h = MOV.rect(id)
+    if not x then return end
+    local ox, oy = MOV.off(id)
+    drag = { id = id, input = input, start = input.Position, ox = ox, oy = oy, x = x, y = y, w = w, h = h, nx = x, ny = y }
+    MOV.sel = id
+    UIX.snd("tap")
+end
+
+local function dragTo(pos)
+    local d = drag
+    if not d then return end
+    local vp = viewport()
+    local nx = clamp(d.x + (pos.X - d.start.X), 0, math.max(vp.X - d.w, 0))
+    local ny = clamp(d.y + (pos.Y - d.start.Y), 0, math.max(vp.Y - d.h, 0))
+    if cfg.hudSnap ~= false then
+        nx = clamp(snapAxis(nx, d.w, vp.X), 0, math.max(vp.X - d.w, 0))
+        ny = clamp(snapAxis(ny, d.h, vp.Y), 0, math.max(vp.Y - d.h, 0))
+    end
+    d.nx, d.ny = nx, ny
+    MOV.set(d.id, d.ox + (nx - d.x), d.oy + (ny - d.y))
+end
+MOV.dragTo = dragTo
+
+local function makeHandle(it)
+    local f = new("Frame", { Name = "hudH", BackgroundTransparency = 0.82, BorderSizePixel = 0, Active = true, ZIndex = 62, Visible = false }, host)
+    bindTheme(f, "BackgroundColor3", "acc")
+    corner(f, 8)
+    local st = stroke(f, T.acc, 2, 0)
+    bindTheme(st, "Color", "acc")
+    local tag = new("Frame", { Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(math.max(46, #it.name * 7 + 16), 18), BorderSizePixel = 0, ZIndex = 63 }, f)
+    corner(tag, 6)
+    bindTheme(tag, "BackgroundColor3", "panel")
+    local lb = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = it.name, TextSize = 11, Font = F.bold, ZIndex = 64, BorderSizePixel = 0 }, tag)
+    bindTheme(lb, "TextColor3", "text")
+    f.InputBegan:Connect(function(i)
+        if MOV.editing and isPress(i) then startDrag(it.id, i) end
+    end)
+    local h = { f = f, st = st, tag = tag, lb = lb, id = it.id }
+    MOV.handles[it.id] = h
+    return h
+end
+
+local function paintBar()
+    if not (ov and alive(ov.f)) then return end
+    local sel = MOV.sel and MOV.items[MOV.sel]
+    ov.hint.Text = sel and ("Moving: " .. sel.name) or "Drag a panel"
+    ov.snap.Text = cfg.hudSnap ~= false and "Snap: on" or "Snap: off"
+    ov.snap.BackgroundColor3 = cfg.hudSnap ~= false and T.acc or T.off
+    ov.snap.TextColor3 = cfg.hudSnap ~= false and T.onacc or T.text
+    ov.reset.Text = sel and "Reset panel" or "Reset all"
+end
+
+local function buildBar()
+    if ov and alive(ov.f) then return ov end
+    local f = new("Frame", { Name = "hudMovBar", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -18), Size = UDim2.fromOffset(0, 40), AutomaticSize = Enum.AutomaticSize.X,
+        BorderSizePixel = 0, ZIndex = 75, Visible = false }, gui)
+    corner(f, 10)
+    bindTheme(f, "BackgroundColor3", "panel")
+    bindTheme(stroke(f, T.line, 1, 0), "Color", "line")
+    pad(f, 8, 0, 8, 0)
+    new("UIScale", { Scale = clamp(curScale(), 0.85, 1.25) }, f)
+    new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }, f)
+    local hint = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 28), AutomaticSize = Enum.AutomaticSize.X, Text = "Drag a panel", TextSize = 12, Font = F.med,
+        LayoutOrder = 1, BorderSizePixel = 0, ZIndex = 76 }, f)
+    bindTheme(hint, "TextColor3", "dim")
+    local function mk(text, w, order, primary)
+        local b = new("TextButton", { Size = UDim2.fromOffset(w, 28), Text = text, TextSize = 12, Font = F.bold, AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = order, ZIndex = 76 }, f)
+        corner(b, 7)
+        if primary then
+            bindTheme(b, "BackgroundColor3", "acc"); bindTheme(b, "TextColor3", "onacc")
+        else
+            bindTheme(b, "BackgroundColor3", "off"); bindTheme(b, "TextColor3", "text")
+        end
+        return b
+    end
+    local snap, reset, done = mk("Snap: on", 76, 2), mk("Reset all", 84, 3), mk("Done", 56, 4, true)
+    snap.Activated:Connect(function()
+        cfg.hudSnap = not (cfg.hudSnap ~= false)
+        if Flags.hudSnap and Flags.hudSnap.Set then Flags.hudSnap:Set(cfg.hudSnap, true) end
+        mark("hud")
+        UIX.snd("switch", cfg.hudSnap)
+        paintBar()
+    end)
+    reset.Activated:Connect(function()
+        if MOV.sel then MOV.reset(MOV.sel) else MOV.resetAll() end
+        UIX.snd("tap")
+        paintBar()
+    end)
+    done.Activated:Connect(function() MOV.edit(false, true) end)
+    ov = { f = f, hint = hint, snap = snap, reset = reset, done = done }
+    paintBar()
+    return ov
+end
+
+function MOV.edit(on, reopen)
+    if on == MOV.editing then return true end
+    if on then
+        if UIX.BTN and UIX.BTN.editKey then UIX.BTN.endPlace(false) end
+        if #MOV.active() == 0 then
+            notify("Switch a HUD panel on first (HUD and Client tabs)", 3)
+            return false
+        end
+        MOV.editing = true
+        MOV.sel = nil
+        drag = nil
+        UIX.closeDD()
+        buildBar()
+        ov.f.Visible = true
+        host.Visible = true
+        paintBar()
+        UI.toggle(false)
+        return true
+    end
+    MOV.editing = false
+    MOV.sel = nil
+    drag = nil
+    host.Visible = false
+    for _, h in pairs(MOV.handles) do h.f.Visible = false end
+    if ov and alive(ov.f) then ov.f.Visible = false end
+    if UIX.onLayout then pcall(UIX.onLayout) end
+    if reopen then UI.toggle(true) end
+    return true
+end
+
+bind(UIS.InputChanged, function(i)
+    local d = drag
+    if not d or not isMove(i) then return end
+    if d.input.UserInputType == Enum.UserInputType.Touch and i ~= d.input then return end
+    dragTo(i.Position)
+end)
+
+bind(UIS.InputEnded, function(i)
+    local d = drag
+    if d and (i == d.input or (isPress(i) and i.UserInputType == d.input.UserInputType)) then
+        drag = nil
+    end
+end)
+
+function MOV.step(dt)
+    if not MOV.editing then return end
+    if menuOpen() then MOV.edit(false, false); return end
+    local act = {}
+    for _, id in ipairs(MOV.order) do
+        local it = MOV.items[id]
+        local h = MOV.handles[id]
+        if isOn(it) then
+            act[id] = true
+            if not h or not alive(h.f) then h = makeHandle(it) end
+            local x, y, w, ht, measured
+            if drag and drag.id == id then
+                x, y, w, ht = drag.nx, drag.ny, drag.w, drag.h
+            else
+                x, y, w, ht, measured = MOV.rect(id)
+            end
+            if x then
+                w, ht = math.max(w, 34), math.max(ht, 24)
+                h.f.Position = UDim2.fromOffset(math.floor(x + 0.5), math.floor(y + 0.5))
+                h.f.Size = UDim2.fromOffset(math.floor(w + 0.5), math.floor(ht + 0.5))
+                h.f.Visible = true
+                local sel = MOV.sel == id
+                h.st.Thickness = sel and 3 or 2
+                h.f.BackgroundTransparency = sel and 0.68 or 0.84
+            else
+                h.f.Visible = false
+            end
+        elseif h then
+            h.f.Visible = false
+        end
+    end
+    if MOV.sel and not act[MOV.sel] then MOV.sel = nil end
+    paintBar()
+end
+
+reg(function() paintBar() end)
+end
+do
+
+local C, F, XL, XR, XC = UIX.C, UIX.F, UIX.XL, UIX.XR, UIX.XC
 local TI, tw, new, corner, stroke, pad, vlist, WHITE = UIX.TI, UIX.tw, UIX.new, UIX.corner, UIX.stroke, UIX.pad, UIX.vlist, UIX.WHITE
 local T, bindTheme, bindGrad, reg, label = UIX.T, UIX.bindTheme, UIX.bindGrad, UIX.reg, UIX.label
 local isPress, isMove, curScale, gui, shell, win, viewport = UIX.isPress, UIX.isMove, UIX.curScale, UIX.gui, UIX.shell, UIX.win, UIX.viewport
@@ -21561,6 +21883,7 @@ function UI.step(dt)
     gradT = gradT + d * ((th and th.fast) and 0.95 or 0.38)
     fabStep(d, t)
     if UIX.btnStep then UIX.btnStep(d) end
+    if UIX.mov then UIX.mov.step(d) end
     local lite = C("uiLite") == true or UIX.perfTier >= 3
     if shell.Visible then
         UIX.bgStep(t, d)
@@ -22323,7 +22646,7 @@ UIX.sfx = SFX
 
 local FOLDER = "AfraidSide"
 local SUB = FOLDER .. "/sfx"
-local VER = "s3"
+local VER = "s4"
 local RATE = 22050
 local TAU = math.pi * 2
 
@@ -22332,10 +22655,13 @@ local N = { A2 = 110, C3 = 130.81, D3 = 146.83, E3 = 164.81, F3 = 174.61, G3 = 1
 
 local SPEC = {}
 do
+    local LIGHT = 1.68
     local function note(f, t, d, a, o)
-        local v = { f = f, t = t, d = d, a = a, dc = 2.4, at = 0.009, lp = 0.3 }
+        local pk = (o and o.pk) or LIGHT
+        local v = { f = f * pk, t = t, d = d, a = a, dc = 2.4, at = 0.009, lp = 0.45 }
         v.h = f < 200 and { { 2, 0.8 }, { 3, 0.4 }, { 4, 0.12 } } or { { 2, 0.34 }, { 3, 0.12 } }
-        if o then for k, x in pairs(o) do v[k] = x end end
+        if o then for k, x in pairs(o) do if k ~= "pk" then v[k] = x end end end
+        if o and o.f2 then v.f2 = o.f2 * pk end
         return v
     end
     local function soft(list, t0, step, d, a, o)
@@ -22356,9 +22682,9 @@ do
     SPEC.slide = { len = 0.05, v = { note(260, 0, 0.032, 0.32, { dc = 2, at = 0.002, h = { { 2, 0.2 } } }) } }
     SPEC.notify = { len = 1.05, echo = { 0.13, 0.3 }, v = { note(N.A3, 0, 0.75, 0.52, { dc = 2.6, at = 0.006, h = { { 2.01, 0.4 }, { 3, 0.2 }, { 4.2, 0.06 } } }),
         note(N.E4, 0.12, 0.75, 0.44, { dc = 2.6, at = 0.006, h = { { 2.01, 0.35 }, { 3, 0.14 } } }) } }
-    SPEC.err = { len = 0.5, echo = { 0.07, 0.2 }, v = { note(N.F3, 0, 0.2, 0.55, { w = "tri", lp = 0.22 }), note(N.D3, 0.14, 0.3, 0.55, { w = "tri", lp = 0.22 }) } }
+    SPEC.err = { len = 0.5, echo = { 0.07, 0.2 }, v = { note(N.F3, 0, 0.2, 0.55, { w = "tri", lp = 0.26, pk = 1.3 }), note(N.D3, 0.14, 0.3, 0.55, { w = "tri", lp = 0.26, pk = 1.3 }) } }
     SPEC.bind = { len = 0.36, echo = { 0.06, 0.2 }, v = { note(N.A3, 0, 0.16, 0.5), note(N.E4, 0.07, 0.26, 0.5) } }
-    SPEC.place = { len = 0.22, v = { note(140, 0, 0.17, 0.8, { f2 = 60, dc = 2, at = 0.003, h = { { 2, 0.3 }, { 3, 0.15 } } }), air(0, 0.035, 0.26, 0.2, 0.0005) } }
+    SPEC.place = { len = 0.22, v = { note(140, 0, 0.17, 0.8, { pk = 1.3, f2 = 60, dc = 2, at = 0.003, h = { { 2, 0.3 }, { 3, 0.15 } } }), air(0, 0.035, 0.26, 0.2, 0.0005) } }
     SPEC.tap = { len = 0.12, v = { note(280, 0, 0.085, 0.5, { f2 = 190, dc = 2.4, at = 0.003, h = { { 2, 0.3 } } }) } }
 
     local function sq(f, t, d, a, f2) return { w = "sq", lp = 0.14, f = f, f2 = f2, t = t, d = d, a = a or 0.4, dc = 1.4, at = 0.006 } end
@@ -22382,14 +22708,14 @@ do
         air(0, 0.12, 0.2, 0.22, 0.004), note(N.A4, 0.06, 0.28, 0.3, { dc = 2.2, h = { { 2.01, 0.2 } } }) } }
     SPEC.coin = { len = 0.55, echo = { 0.07, 0.18 }, v = { note(N.D4, 0, 0.08, 0.46, { w = "tri", lp = 0.22, dc = 1.2 }), note(N.A4, 0.075, 0.42, 0.46, { w = "tri", lp = 0.22, dc = 2 }) } }
     SPEC.bell = { len = 1.2, echo = { 0.15, 0.3 }, v = { note(N.B3, 0, 1.0, 0.5, { dc = 2.4, lp = 0.35, h = { { 2.76, 0.34 }, { 5.4, 0.12 } } }) } }
-    SPEC.thump = { len = 0.34, v = { note(130, 0, 0.26, 0.9, { f2 = 60, dc = 1.8, at = 0.002, h = { { 2, 0.35 }, { 3, 0.18 } } }), air(0, 0.04, 0.34, 0.2, 0.0005) } }
+    SPEC.thump = { len = 0.34, v = { note(130, 0, 0.26, 0.9, { pk = 1.3, f2 = 60, dc = 1.8, at = 0.002, h = { { 2, 0.35 }, { 3, 0.18 } } }), air(0, 0.04, 0.34, 0.2, 0.0005) } }
     SPEC.xp = { len = 0.34, echo = { 0.06, 0.18 }, v = { note(N.D4, 0, 0.12, 0.5, { f2 = 330, dc = 1.4, cv = 0.7 }), note(N.A4, 0.08, 0.2, 0.46, { f2 = 500, dc = 1.8, cv = 0.7 }) } }
     SPEC.levelup = { len = 1.3, echo = { 0.13, 0.32 }, v = cat(soft({ N.D3, N.F3, N.A3, N.D4 }, 0, 0.09, 0.55, 0.46), { note(N.A4, 0.36, 0.8, 0.34, { dc = 2.2 }) }) }
     SPEC.totem = { len = 1.5, echo = { 0.14, 0.3 }, v = { note(N.D3, 0, 1.0, 0.34, { at = 0.16, dc = 1.4 }), note(N.A3, 0.04, 1.0, 0.3, { at = 0.16, dc = 1.4 }), note(N.D4, 0.08, 0.95, 0.26, { at = 0.16, dc = 1.4 }),
         air(0, 0.7, 0.1, 0.08, 0.2), note(N.D4, 0.55, 0.85, 0.34, { dc = 2.2, h = { { 2.01, 0.25 } } }) } }
     SPEC.anvil = { len = 0.7, v = { note(180, 0, 0.55, 0.55, { dc = 3, at = 0.002, h = { { 1.51, 0.34 }, { 2.2, 0.24 }, { 3.4, 0.1 } } }), air(0, 0.03, 0.3, 0.14, 0.0003) } }
     SPEC.jump = { len = 0.26, v = { air(0, 0.22, 0.26, 0.1, 0.06), note(200, 0, 0.18, 0.26, { f2 = 330, dc = 1.6, at = 0.01, h = { { 2, 0.2 } } }) } }
-    SPEC.land = { len = 0.22, v = { note(110, 0, 0.17, 0.8, { f2 = 55, dc = 2, at = 0.003, h = { { 2, 0.3 }, { 3, 0.15 } } }), air(0, 0.04, 0.3, 0.2, 0.0005) } }
+    SPEC.land = { len = 0.22, v = { note(110, 0, 0.17, 0.8, { pk = 1.3, f2 = 55, dc = 2, at = 0.003, h = { { 2, 0.3 }, { 3, 0.15 } } }), air(0, 0.04, 0.3, 0.2, 0.0005) } }
     SPEC.mc_on = { len = 0.5, echo = { 0.07, 0.22 }, v = soft({ N.D3, N.A3, N.D4 }, 0, 0.06, 0.3, 0.48, { at = 0.008 }) }
     SPEC.mc_off = { len = 0.46, echo = { 0.07, 0.2 }, v = soft({ N.D4, N.A3, N.D3 }, 0, 0.06, 0.28, 0.46, { at = 0.008 }) }
     SPEC.toast = { len = 0.22, v = { note(300, 0, 0.12, 0.34, { f2 = 400, dc = 1.8, at = 0.006, h = { { 2, 0.2 } } }), air(0, 0.1, 0.1, 0.08, 0.03) } }
@@ -22583,7 +22909,7 @@ function SFX.play(name, vol, speed, force)
     SFX.last[key] = now
     local ok = pcall(function()
         s.Volume = clamp((vol or 1) * (tonumber(cfg.sfxVol) or 0.6), 0, 1)
-        s.PlaybackSpeed = speed or 1
+        s.PlaybackSpeed = (speed or 1) * clamp(tonumber(cfg.sfxTone) or 1, 0.6, 1.8)
         s.TimePosition = 0
         s:Play()
     end)
@@ -34917,6 +35243,7 @@ M.KEYS_SIDE = { "Left", "Right" }
 local GREY, DIM, RED = Color3.fromRGB(150, 150, 166), Color3.fromRGB(96, 96, 110), Color3.fromRGB(238, 84, 92)
 local PANEL = Color3.fromRGB(11, 11, 16)
 local WHITE = Color3.new(1, 1, 1)
+local MV = UIX.mov
 
 local function mk(class, props, parent)
     local o = Instance.new(class)
@@ -35104,6 +35431,7 @@ end
 local function markStep(dt, t)
     if not cfg.mcMark then dropMark(); return end
     local W = S.mark or buildMark()
+    W.root.Position = MV.udim("mark", 0, 10, 0, 50)
     if t >= W.nextTxt then
         W.nextTxt = t + 0.25
         if t >= S.nextPing then
@@ -35234,7 +35562,7 @@ local function listStep(dt, t)
         r.x = r.x + (tx - r.x) * damp(r.out and 11 or 15, dt)
         local edge = 8
         local px = pos.right and (-edge + r.x) or (edge - r.x)
-        r.f.Position = UDim2.new(pos.right and 1 or 0, px, pos.top and 0 or 1, pos.top and (offY + r.y) or -(offY + r.y))
+        r.f.Position = MV.udim("list", pos.right and 1 or 0, px, pos.top and 0 or 1, pos.top and (offY + r.y) or -(offY + r.y))
         local c = listColor(r.out and idx + 1 or idx, live)
         r.t.TextColor3 = c
         if r.bar then r.bar.BackgroundColor3 = c end
@@ -35292,9 +35620,9 @@ local function toastStep(dt, t)
             local slide = (1 - clamp(age / 0.28, 0, 1)) ^ 3
             e.f.AnchorPoint = Vector2.new(center and 0.5 or 1, 1)
             if center then
-                e.f.Position = UDim2.new(0.5, 0, 1, -(base + e.y) + slide * 18)
+                e.f.Position = MV.udim("toast", 0.5, 0, 1, -(base + e.y) + slide * 18)
             else
-                e.f.Position = UDim2.new(1, -14 + slide * (TW + 30), 1, -(base + e.y))
+                e.f.Position = MV.udim("toast", 1, -14 + slide * (TW + 30), 1, -(base + e.y))
             end
             e.prog.Size = UDim2.fromOffset(floor((TW - 24) * clamp(1 - age / e.life, 0, 1)), 2)
             fade(e, a)
@@ -35325,7 +35653,7 @@ local function hudStep(dt, t)
     if not cfg.mcHp then dropHud(); return end
     local H = S.hud or buildHud()
     local y = clamp(tonumber(cfg.mcHudY) or 100, 20, 400)
-    H.root.Position = UDim2.new(0.5, 0, 1, -y)
+    H.root.Position = MV.udim("hp", 0.5, 0, 1, -y)
     local ch = lp.Character
     local hum = ch and ch:FindFirstChildOfClass("Humanoid")
     local frac, hpv = 1, 100
@@ -35419,7 +35747,7 @@ local function targetStep(dt, t)
     local P = S.tg or buildTarget()
     local pos = TG_POS[cfg.mcTargetPos] or TG_POS["Under crosshair"]
     P.root.AnchorPoint = Vector2.new(pos[3], pos[4])
-    P.root.Position = UDim2.new(pos[1], pos[5], pos[2], pos[6])
+    P.root.Position = MV.udim("target", pos[1], pos[5], pos[2], pos[6])
     P.stroke.Color = WHITE:Lerp(RED, P.flash)
     local rec = pickTarget(t)
     if rec and P.rec ~= rec then
@@ -35531,7 +35859,7 @@ local function keysStep(dt, t)
     end
     local right = cfg.mcKeysSide == "Right"
     K.root.AnchorPoint = Vector2.new(right and 1 or 0, 0)
-    K.root.Position = UDim2.new(right and 1 or 0, right and -10 or 10, 0, clamp(tonumber(cfg.mcKeysY) or 220, 40, 700))
+    K.root.Position = MV.udim("kb", right and 1 or 0, right and -10 or 10, 0, clamp(tonumber(cfg.mcKeysY) or 220, 40, 700))
     for i, it in ipairs(K.items) do
         local on = rows[i] and rows[i].on
         if it.on ~= on then
@@ -35584,6 +35912,66 @@ local function watch(t)
         for _, c in ipairs(ch) do toast(c[1], c[2]) end
     end
 end
+
+local function rowsRect()
+    local l = {}
+    for _, r in pairs(S.rows) do if not r.out then l[#l + 1] = r.f end end
+    return MV.union(l)
+end
+local function toastsRect()
+    local l = {}
+    for _, e in ipairs(S.toasts) do l[#l + 1] = e.f end
+    return MV.union(l)
+end
+
+MV.register("mark", "Watermark", {
+    on = function() return cfg.mcMark == true end,
+    obj = function() return S.mark and S.mark.root end,
+    base = function() return UDim2.fromOffset(10, 50), Vector2.new(0, 0), Vector2.new(S.mark and S.mark.w or 150, 28) end,
+})
+MV.register("list", "Module list", {
+    on = function() return cfg.mcList == true end,
+    rect = rowsRect,
+    base = function()
+        local pos = POS4[cfg.mcListPos] or POS4["Top Right"]
+        local offY = clamp(tonumber(cfg.mcListY) or 64, 0, 400)
+        local size = clamp(tonumber(cfg.mcListSize) or 14, 10, 24)
+        return UDim2.new(pos.right and 1 or 0, pos.right and -8 or 8, pos.top and 0 or 1, pos.top and offY or -offY),
+            Vector2.new(pos.right and 1 or 0, pos.top and 0 or 1), Vector2.new(120, math.max(S.nOn, 3) * (size + 11))
+    end,
+})
+MV.register("toast", "Notifications", {
+    on = function() return cfg.mcToast == true end,
+    rect = toastsRect,
+    base = function()
+        local center = cfg.mcToastPos == "Bottom Center"
+        local base = center and 176 or (isTouch() and 130 or 22)
+        if center then return UDim2.new(0.5, 0, 1, -base), Vector2.new(0.5, 1), Vector2.new(TW, TH) end
+        return UDim2.new(1, -14, 1, -base), Vector2.new(1, 1), Vector2.new(TW, TH)
+    end,
+})
+MV.register("hp", "Health bar", {
+    on = function() return cfg.mcHp == true end,
+    obj = function() return S.hud and S.hud.root end,
+    base = function() return UDim2.new(0.5, 0, 1, -clamp(tonumber(cfg.mcHudY) or 100, 20, 400)), Vector2.new(0.5, 1), Vector2.new(224, 44) end,
+})
+MV.register("target", "Target HUD", {
+    on = function() return cfg.mcTarget == true end,
+    obj = function() return S.tg and S.tg.root end,
+    base = function()
+        local pos = TG_POS[cfg.mcTargetPos] or TG_POS["Under crosshair"]
+        local sc = clamp(tonumber(cfg.mcTargetScale) or 1, 0.5, 2)
+        return UDim2.new(pos[1], pos[5], pos[2], pos[6]), Vector2.new(pos[3], pos[4]), Vector2.new(TGW * sc, TGH * sc)
+    end,
+})
+MV.register("kb", "Keybinds", {
+    on = function() return cfg.mcKeys == true end,
+    obj = function() return S.keys and S.keys.root end,
+    base = function()
+        local right = cfg.mcKeysSide == "Right"
+        return UDim2.new(right and 1 or 0, right and -10 or 10, 0, clamp(tonumber(cfg.mcKeysY) or 220, 40, 700)), Vector2.new(right and 1 or 0, 0), Vector2.new(184, 34 + 4 * ROW_H)
+    end,
+})
 
 local function teardown()
     if S.gui then pcall(function() S.gui:Destroy() end); S.gui = nil end
@@ -36390,7 +36778,7 @@ MISC.CFGC = (function()
 local M = {}
 local BASE = {}
 M.skip = {}
-M.keep = { binds = true, btns = true, sfxOn = true, sfxVol = true, sfxPack = true, sfxSwitch = true, sfxMenu = true, sfxUi = true, menuKey = true, bindClick = true, uiScale = true, sbCollapsed = true, wmX = true, wmY = true, splash = true, tgOpen = true, menuAnim = true, menuAnimT = true, uiAnim = true, uiLite = true }
+M.keep = { binds = true, btns = true, hudMov = true, hudSnap = true, sfxOn = true, sfxVol = true, sfxTone = true, sfxPack = true, sfxSwitch = true, sfxMenu = true, sfxUi = true, menuKey = true, bindClick = true, uiScale = true, sbCollapsed = true, wmX = true, wmY = true, splash = true, tgOpen = true, menuAnim = true, menuAnimT = true, uiAnim = true, uiLite = true }
 
 local function deep(v)
     if type(v) ~= "table" then return v end
@@ -36766,15 +37154,26 @@ end
 
 function M.status() return E.last end
 
-local function ratioScale(ratio)
+local SY_MIN, SY_MAX = 0.35, 1.8
+local SX_MIN, SX_MAX = 0.6, 1.8
+
+local function aspect()
     local cm = cam()
     local vp = cm and cm.ViewportSize or Vector2.new(1920, 1080)
-    local aspect = vp.X / math.max(vp.Y, 1)
-    return clamp(ratio / aspect, 0.35, 1)
+    return vp.X / math.max(vp.Y, 1)
+end
+M.aspect = aspect
+
+local function ratioScale(ratio)
+    return clamp(ratio / aspect(), SY_MIN, SY_MAX)
 end
 
-M.STRETCH = { "Custom", "3:2", "4:3", "5:4", "Ultra" }
-local STRETCH_RATIO = { ["3:2"] = 1.5, ["4:3"] = 4 / 3, ["5:4"] = 1.25, Ultra = 1.0 }
+M.STRETCH = { "Custom", "1:1", "5:4", "4:3", "3:2", "16:10", "16:9", "21:9" }
+local STRETCH_RATIO = {
+    ["1:1"] = 1, ["5:4"] = 1.25, ["4:3"] = 4 / 3, ["3:2"] = 1.5, ["16:10"] = 1.6, ["16:9"] = 16 / 9, ["21:9"] = 21 / 9,
+    Ultra = 1,
+}
+M.STRETCH_RATIO = STRETCH_RATIO
 function M.stretchFor(name)
     local r = STRETCH_RATIO[name]
     if not r then return nil end
@@ -36797,7 +37196,18 @@ local function stretchFrame()
     local cur = cm.CFrame
     local base = cur
     if E.out and cur == E.out then base = E.raw end
-    local sx, sy = clamp(cfg.stretchX or 1, 0.5, 2), clamp(cfg.stretchY or 0.75, 0.3, 1.2)
+    local sx = clamp(cfg.stretchX or 1, SX_MIN, SX_MAX)
+    local sy
+    local want = STRETCH_RATIO[cfg.stretchPreset]
+    if want then
+        sy = ratioScale(want)
+        if math.abs((tonumber(cfg.stretchY) or 0) - sy) > 0.006 then
+            local f = Flags.stretchY
+            if f and f.Set then f:Set(sy, true) else cfg.stretchY = sy end
+        end
+    else
+        sy = clamp(tonumber(cfg.stretchY) or 0.75, SY_MIN, SY_MAX)
+    end
     if cfg.stretchFlip then sx, sy = 1 / sx, 1 / sy end
     local out = base * CFrame.new(0, 0, 0, sx, 0, 0, 0, sy, 0, 0, 0, 1)
     E.raw, E.out = base, out
@@ -37394,6 +37804,8 @@ local H = {
     lines = nil, lineT = 0, lineA = 0, rip = {}, trail = {}, hist = {}, clicks = {}, keys = {},
 }
 
+local MV = UIX.mov
+
 local function mkF(class, props, parent)
     local o = Instance.new(class)
     for k, v in pairs(props) do o[k] = v end
@@ -37467,7 +37879,8 @@ local function applyPill()
     local p = H.pill
     local pos = POS[cfg.hudPos] or POS["Top Left"]
     p.root.AnchorPoint = Vector2.new(pos[3], pos[4])
-    p.root.Position = UDim2.new(pos[1], pos[5], pos[2], pos[6])
+    p.root.Position = MV.udim("pill", pos[1], pos[5], pos[2], pos[6])
+    H.pillOx, H.pillOy = MV.off("pill")
     local vert = cfg.hudStyle == "Stack"
     p.list.FillDirection = vert and Enum.FillDirection.Vertical or Enum.FillDirection.Horizontal
     p.list.Padding = UDim.new(0, vert and 3 or 12)
@@ -37567,7 +37980,8 @@ local function placeKeys()
     k.root.AnchorPoint = Vector2.new(pos[3], pos[4])
     local yo = (pos[4] == 1) and -14 or 42
     if cfg.hudPos == cfg.ksPos and cfg.hudFps then yo = yo + ((pos[4] == 1) and -44 or 44) end
-    k.root.Position = UDim2.new(pos[1], pos[5], pos[2], yo)
+    k.root.Position = MV.udim("ks", pos[1], pos[5], pos[2], yo)
+    H.ksOx, H.ksOy = MV.off("ks")
     k.scale.Scale = cfg.ksScale
     H.ksSig = cfg.ksPos .. cfg.ksScale .. cfg.hudPos .. tostring(cfg.hudFps)
 end
@@ -37819,6 +38233,26 @@ local function cursStep(dt, t)
     end
 end
 
+MV.register("pill", "Info overlay", {
+    on = function() return cfg.hudOn == true and (cfg.hudFps or cfg.hudPing or cfg.hudClock or cfg.hudSpeed or cfg.hudPos2 or cfg.hudPlayers) and true or false end,
+    obj = function() return H.pill and H.pill.root end,
+    base = function()
+        local pos = POS[cfg.hudPos] or POS["Top Left"]
+        return UDim2.new(pos[1], pos[5], pos[2], pos[6]), Vector2.new(pos[3], pos[4]), Vector2.new(190, 28)
+    end,
+})
+MV.register("ks", "Keystrokes", {
+    on = function() return cfg.ksOn == true end,
+    obj = function() return H.ks and H.ks.root end,
+    base = function()
+        local pos = POS[cfg.ksPos] or POS["Bottom Left"]
+        local yo = (pos[4] == 1) and -14 or 42
+        if cfg.hudPos == cfg.ksPos and cfg.hudFps then yo = yo + ((pos[4] == 1) and -44 or 44) end
+        local sc = clamp(tonumber(cfg.ksScale) or 1, 0.6, 1.8)
+        return UDim2.new(pos[1], pos[5], pos[2], yo), Vector2.new(pos[3], pos[4]), Vector2.new(170 * sc, 130 * sc)
+    end,
+})
+
 function M.step(dt)
     local t = os.clock()
     local P, amt = fltStep(dt)
@@ -37827,7 +38261,16 @@ function M.step(dt)
     local anyHud = cfg.hudOn and (cfg.hudFps or cfg.hudPing or cfg.hudClock or cfg.hudSpeed or cfg.hudPos2 or cfg.hudPlayers)
     if anyHud then
         if not H.pill or not H.pill.root.Parent then buildPill() end
-        if H.pillSig ~= pillSig() then applyPill() end
+        if H.pillSig ~= pillSig() then
+            applyPill()
+        else
+            local ox, oy = MV.off("pill")
+            if ox ~= H.pillOx or oy ~= H.pillOy then
+                local pos = POS[cfg.hudPos] or POS["Top Left"]
+                H.pillOx, H.pillOy = ox, oy
+                H.pill.root.Position = MV.udim("pill", pos[1], pos[5], pos[2], pos[6])
+            end
+        end
         H.pill.root.Visible = true
         if t >= H.nextTxt then
             H.nextTxt = t + 0.25
@@ -37838,7 +38281,8 @@ function M.step(dt)
     end
     if cfg.ksOn then
         if not H.ks or not H.ks.root.Parent then buildKeys() end
-        if H.ksSig ~= (cfg.ksPos .. cfg.ksScale .. cfg.hudPos .. tostring(cfg.hudFps)) then placeKeys() end
+        local kx, ky = MV.off("ks")
+        if H.ksSig ~= (cfg.ksPos .. cfg.ksScale .. cfg.hudPos .. tostring(cfg.hudFps)) or kx ~= H.ksOx or ky ~= H.ksOy then placeKeys() end
         H.ks.root.Visible = true
         keysStep(dt, t)
     elseif H.ks and H.ks.root.Visible then
@@ -41742,25 +42186,23 @@ end
 function M.buildTab()
     local tab = UITab("Da Hood", "ic_combat", nil)
     local a = tab:Section("L", "Silent aim", nil)
-    a:Toggle("dhOn", "Silent aim", D.dhOn)
-    a:Slider("dhFov", "FOV radius", 40, 600, D.dhFov, 0, " px")
-    a:Segment("dhPart", "Target part", { "Head", "Torso", "Nearest" }, D.dhPart)
-    a:Slider("dhChance", "Hit chance", 1, 100, D.dhChance, 0, " %")
-    a:Label("Every shot of your gun goes to the player closest to the cursor inside the circle. Head first; if the head is covered the visible part is shot. Needs hookfunction.")
-
-    local t = tab:Section("L", "Targets", nil)
-    t:Toggle("dhWall", "Visible only (no shots through walls)", D.dhWall)
-    t:Toggle("dhKo", "Skip knocked out players", D.dhKo)
-    t:Toggle("dhFf", "Skip players with a forcefield", D.dhFf)
-    t:Segment("dhFollow", "Aim from", { "Auto", "Mouse", "Center" }, D.dhFollow)
-    t:Label("Auto: the cursor on PC, the middle of the screen on phones.")
+    local g = a:Group("dhOn", "Silent aim", D.dhOn)
+    g:Slider("dhFov", "FOV radius", 40, 600, D.dhFov, 0, " px")
+    g:Segment("dhPart", "Target part", { "Head", "Torso", "Nearest" }, D.dhPart)
+    g:Slider("dhChance", "Hit chance", 1, 100, D.dhChance, 0, " %")
+    g:Toggle("dhWall", "Visible only (no shots through walls)", D.dhWall)
+    g:Toggle("dhKo", "Skip knocked out players", D.dhKo)
+    g:Toggle("dhFf", "Skip players with a forcefield", D.dhFf)
+    g:Segment("dhFollow", "Aim from", { "Auto", "Mouse", "Center" }, D.dhFollow)
+    g:Label("Every shot of your gun goes to the player closest to the cursor inside the circle. Head first; if the head is covered the visible part is shot. Auto: the cursor on PC, the middle of the screen on phones. Needs hookfunction.")
 
     local l = tab:Section("R", "Look", nil)
-    l:Toggle("dhCircle", "FOV circle", D.dhCircle)
-    l:Toggle("dhTracer", "Line to the target", D.dhTracer)
+    local gc = l:Group("dhCircle", "FOV circle", D.dhCircle)
+    gc:Toggle("dhTheme", "Follow the menu colour", D.dhTheme)
+    gc:Hue("dhH", "Own colour", D.dhH)
+    local gt = l:Group("dhTracer", "Line to the target", D.dhTracer)
+    gt:Label("Uses the FOV circle colour.")
     l:Toggle("dhTag", "Target tag (name, hp, distance)", D.dhTag)
-    l:Toggle("dhTheme", "Follow the menu colour", D.dhTheme)
-    l:Hue("dhH", "Own colour", D.dhH)
 
     local s = tab:Section("R", "Status", nil)
     local st = s:Label("")
@@ -41810,15 +42252,11 @@ local function buildMoveUI(tab, H)
         g:Toggle("flyAnim", "Keep animations", true)
         g:Toggle("flyWheel", "Mouse wheel changes speed", true)
         g:Toggle("flyJumpUp", "Jump button flies up (touch)", true)
-    end
-
-    do
-        local s = tab:Section("L", "Flight keys", nil, "ic_keyboard")
-        s:Keybind("flyUp", "Up", "Space")
-        s:Keybind("flyDown", "Down", "LeftControl")
-        s:Keybind("flyBoostKey", "Boost (hold)", "LeftShift")
-        s:Keybind("flySlowKey", "Slow (hold)", "LeftAlt")
-        s:Label("Bind a key to the Fly switch itself: right-click the name of the switch.")
+        g:Keybind("flyUp", "Up", "Space")
+        g:Keybind("flyDown", "Down", "LeftControl")
+        g:Keybind("flyBoostKey", "Boost (hold)", "LeftShift")
+        g:Keybind("flySlowKey", "Slow (hold)", "LeftAlt")
+        g:Label("Bind a key to the Fly switch itself: right-click the name of the switch.")
     end
 
     do
@@ -43050,27 +43488,27 @@ do
     g:Slider("aimDelay", "Start delay", 0, 500, D.aimDelay, 0, " ms")
     g:Slider("aimShake", "Hand shake", 0, 1, D.aimShake, 2)
 
-    local s2 = tCombat:Section("L", "Checks", nil)
-    s2:Toggle("aimVisible", "Visible only (wall check)", D.aimVisible)
-    s2:Toggle("aimTeam", "Ignore teammates", D.aimTeam)
-    s2:Toggle("aimFF", "Ignore ForceField", D.aimFF)
-    s2:Toggle("aimLock", "Stay on the target until it is lost", D.aimLock)
+    g:Divider("Checks")
+    g:Toggle("aimVisible", "Visible only (wall check)", D.aimVisible)
+    g:Toggle("aimTeam", "Ignore teammates", D.aimTeam)
+    g:Toggle("aimFF", "Ignore ForceField", D.aimFF)
+    g:Toggle("aimLock", "Stay on the target until it is lost", D.aimLock)
 
-    local s3 = tCombat:Section("R", "Targeting", nil)
-    s3:Dropdown("tgtFilters", "Targets", { "Players", "NPCs" }, D.tgtFilters, true)
-    s3:Slider("tgtRange", "Max distance", 50, 2000, D.tgtRange, 0, " st")
-    s3:Segment("tgtSort", "Priority", { "Closest", "Lowest HP", "Crosshair" }, D.tgtSort)
-    s3:Segment("aimFrom", "Circle centre", { "Auto", "Center", "Mouse" }, D.aimFrom)
+    g:Divider("Targeting")
+    g:Dropdown("tgtFilters", "Targets", { "Players", "NPCs" }, D.tgtFilters, true)
+    g:Slider("tgtRange", "Max distance", 50, 2000, D.tgtRange, 0, " st")
+    g:Segment("tgtSort", "Priority", { "Closest", "Lowest HP", "Crosshair" }, D.tgtSort)
+    g:Segment("aimFrom", "Circle centre", { "Auto", "Center", "Mouse" }, D.aimFrom)
 
-    local s4 = tCombat:Section("R", "FOV circle and marker", nil)
-    s4:Toggle("aimShowFov", "Show the FOV circle", D.aimShowFov)
-    s4:Slider("aimFovThick", "Thickness", 0.5, 5, D.aimFovThick, 1, " px")
-    s4:Slider("aimFovFill", "Fill", 0, 0.6, D.aimFovFill, 2)
-    s4:Hue("aimFovH", "Hue", D.aimFovH)
-    s4:Toggle("aimInfo", "Target name, distance and health", D.aimInfo)
-    s4:Toggle("aimLine", "Line to the target", D.aimLine)
-    s4:ActionButton("Aim screen button", "aim_hold")
-    s4:Label("Camera turns the view toward the target. Mouse moves the cursor relatively (needs mousemoverel). Hold uses the key, right mouse or your own screen button (created above; nothing appears by itself).")
+    g:Divider("FOV circle and marker")
+    g:Toggle("aimShowFov", "Show the FOV circle", D.aimShowFov)
+    g:Slider("aimFovThick", "Thickness", 0.5, 5, D.aimFovThick, 1, " px")
+    g:Slider("aimFovFill", "Fill", 0, 0.6, D.aimFovFill, 2)
+    g:Hue("aimFovH", "Hue", D.aimFovH)
+    g:Toggle("aimInfo", "Target name, distance and health", D.aimInfo)
+    g:Toggle("aimLine", "Line to the target", D.aimLine)
+    g:ActionButton("Aim screen button", "aim_hold")
+    g:Label("Camera turns the view toward the target. Mouse moves the cursor relatively (needs mousemoverel). Hold uses the key, right mouse or your own screen button (created above; nothing appears by itself).")
 
     local BD = MISC.BDC
     local sb = tCombat:Section("L", "Back dash cancel", nil)
@@ -43117,58 +43555,92 @@ do
     g:Toggle("fvBait", "Roam past other players", D.fvBait)
     g:Toggle("fvHide", "Hide the real body on my screen", D.fvHide)
     g:Slider("fvBail", "Stop below this real HP", 0, 0.8, D.fvBail, 2)
-    fvStatus = s:Label("Off")
-    s:Label("You keep playing on a copy that stays where you are. Everyone else, and every ESP, sees the real body far away. Far: it stands still about 50,000 studs away on an invisible floor. Space: it hangs high above. Roam: it flies around the map. Tools you hold are handed back to your backpack when you leave.")
+    fvStatus = g:Label("Off")
+    g:Label("You keep playing on a copy that stays where you are. Everyone else, and every ESP, sees the real body far away. Far: it stands still about 50,000 studs away on an invisible floor. Space: it hangs high above. Roam: it flies around the map. Tools you hold are handed back to your backpack when you leave.")
 
-    local s2 = tFake:Section("R", "Strike", nil)
-    s2:Keybind("fvStrikeKey", "Strike key", D.fvStrikeKey)
-    s2:Button("Strike now", function() DEC.strike() end)
-    s2:Segment("fvStrikePick", "Target", { "Nearest", "Lowest HP", "Crosshair" }, D.fvStrikePick)
-    s2:Slider("fvStrikeRange", "Range from you", 30, 1000, D.fvStrikeRange, 0, " st")
-    s2:Slider("fvStrikeTime", "Time next to the target", 0.2, 2, D.fvStrikeTime, 2, " s")
-    s2:Slider("fvStrikeCd", "Cooldown", 0.3, 5, D.fvStrikeCd, 1, " s")
-    s2:Slider("fvStrikeDist", "Distance to the target", 2, 12, D.fvStrikeDist, 1, " st")
-    s2:Toggle("fvStrikeAuto", "Use my tool during a strike", D.fvStrikeAuto)
-    s2:ActionButton("Strike screen button", "fv_strike")
-    s2:Label("A strike moves the real body next to the target, uses the tool and returns it to the parking spot. The game decides whether the hit counts.")
+    g:Divider("Strike")
+    g:Keybind("fvStrikeKey", "Strike key", D.fvStrikeKey)
+    g:Button("Strike now", function() DEC.strike() end)
+    g:Segment("fvStrikePick", "Target", { "Nearest", "Lowest HP", "Crosshair" }, D.fvStrikePick)
+    g:Slider("fvStrikeRange", "Range from you", 30, 1000, D.fvStrikeRange, 0, " st")
+    g:Slider("fvStrikeTime", "Time next to the target", 0.2, 2, D.fvStrikeTime, 2, " s")
+    g:Slider("fvStrikeCd", "Cooldown", 0.3, 5, D.fvStrikeCd, 1, " s")
+    g:Slider("fvStrikeDist", "Distance to the target", 2, 12, D.fvStrikeDist, 1, " st")
+    g:Toggle("fvStrikeAuto", "Use my tool during a strike", D.fvStrikeAuto)
+    g:ActionButton("Strike screen button", "fv_strike")
+    g:Label("A strike moves the real body next to the target, uses the tool and returns it to the parking spot. The game decides whether the hit counts.")
     DEC.onStatus = function(t) if fvStatus then fvStatus.Text = t end end
 end
 
 local tPlayers = UITab("ESP", "ic_esp", "vis")
 do
     local s = tPlayers:Section("L", "Player ESP", nil)
-    s:Toggle("espOn", "Player ESP", D.espOn)
-    s:Slider("espRange", "Range", 50, 3000, D.espRange, 0, " st")
-    s:Toggle("espTeam", "Hide my teammates", D.espTeam)
-    s:Label("Box, label and colour looks have a live preview in ESP Look.")
+    local g = s:Group("espOn", "Player ESP", D.espOn)
+    g:Slider("espRange", "Range", 50, 3000, D.espRange, 0, " st")
+    g:Toggle("espTeam", "Hide my teammates", D.espTeam)
 
-    local s3b = tPlayers:Section("R", "Smoothness", nil)
-    s3b:Segment("espRate", "Update rate", { "Every frame", "30 Hz", "15 Hz" }, D.espRate)
-    s3b:Slider("espPredict", "Lead (predict movement)", 0, 0.15, D.espPredict, 3, " s")
-    s3b:Slider("espSmooth", "Smoothing", 0, 0.9, D.espSmooth, 2)
-    s3b:Label("The boxes are drawn after the camera moves each frame, so they stay glued to players. Use Lead only if you still see a delay on a laggy server.")
+    g:Divider("Live preview")
+    CHAR.mountEsp(g:Custom(300))
+    g:Slider("espPvHp", "Preview health", 0.05, 1, D.espPvHp, 2)
+
+    g:Divider("Colour")
+    g:Segment("espColor", "Colour", { "Custom", "Team", "Health", "Rainbow" }, D.espColor)
+    g:Hue("espH", "Custom hue", D.espH)
+    g:Slider("espS", "Custom saturation", 0, 1, D.espS, 2)
+
+    g:Divider("Box")
+    g:Dropdown("espBox", "Style", { "Corners", "Brackets", "Box", "Rounded", "Glow", "Off" }, D.espBox, false)
+    g:Slider("espThick", "Thickness", 1, 4, D.espThick, 1, " px")
+    g:Segment("espFillStyle", "Fill", { "Gradient", "Solid", "Off" }, D.espFillStyle)
+    g:Slider("espFill", "Fill transparency", 0.5, 1, D.espFill, 2)
+    g:Slider("espWidth", "Box width", 0.6, 1.8, D.espWidth, 2, "x")
+    g:Slider("espHeight", "Box height", 0.8, 1.3, D.espHeight, 2, "x")
+    g:Toggle("espGrad", "Two-colour outline and fill", D.espGrad)
+    g:Toggle("espGradSpin", "Animated outline", D.espGradSpin)
+    g:Toggle("espGlow", "Soft glow around the box", D.espGlow)
+
+    g:Divider("Labels")
+    g:Toggle("espNames", "Name", D.espNames)
+    g:Segment("espNameMode", "Name shows", { "Display", "Username", "Both" }, D.espNameMode)
+    g:Toggle("espPill", "Dark pills behind text", D.espPill)
+    g:Slider("espText", "Text size", 9, 22, D.espText, 0)
+    g:Toggle("espHealth", "Health bar", D.espHealth)
+    g:Segment("espHpPos", "Health bar position", { "Above", "Below", "Left", "Right" }, D.espHpPos)
+    g:Segment("espHpStyle", "Health bar style", { "Smooth", "Segments", "Capsule" }, D.espHpStyle)
+    g:Toggle("espHpGrad", "Colour by health", D.espHpGrad)
+    g:Toggle("espHpText", "Health number", D.espHpText)
+    g:Toggle("espHpGhost", "Damage chip (white trail after a hit)", D.espHpGhost)
+    g:Toggle("espHpPulse", "Pulse when health is low", D.espHpPulse)
+    g:Toggle("espDist", "Distance", D.espDist)
+    g:Toggle("espTool", "Held tool", D.espTool)
+
+    g:Divider("Smoothness")
+    g:Segment("espRate", "Update rate", { "Every frame", "30 Hz", "15 Hz" }, D.espRate)
+    g:Slider("espPredict", "Lead (predict movement)", 0, 0.15, D.espPredict, 3, " s")
+    g:Slider("espSmooth", "Smoothing", 0, 0.9, D.espSmooth, 2)
+    g:Label("The boxes are drawn after the camera moves each frame, so they stay glued to players. Use Lead only if you still see a delay on a laggy server.")
 
     local s4 = tPlayers:Section("R", "Tracers and arrows", nil)
-    s4:Toggle("espTracer", "Tracer lines", D.espTracer)
-    s4:Segment("espTracerFrom", "From", { "Bottom", "Center", "Top" }, D.espTracerFrom)
-    s4:Slider("espTracerW", "Line width", 1, 4, D.espTracerW, 1, " px")
-    s4:Toggle("espArrows", "Off-screen arrows", D.espArrows)
-    s4:Slider("espArrowR", "Arrow radius", 0.3, 1, D.espArrowR, 2)
+    local gt = s4:Group("espTracer", "Tracer lines", D.espTracer)
+    gt:Segment("espTracerFrom", "From", { "Bottom", "Center", "Top" }, D.espTracerFrom)
+    gt:Slider("espTracerW", "Line width", 1, 4, D.espTracerW, 1, " px")
+    local ga = s4:Group("espArrows", "Off-screen arrows", D.espArrows)
+    ga:Slider("espArrowR", "Arrow radius", 0.3, 1, D.espArrowR, 2)
 
     local s5 = tPlayers:Section("L", "Chams (glow through walls)", nil)
-    s5:Toggle("espChams", "Highlight nearest players", D.espChams)
-    s5:Toggle("espThrough", "See through walls", D.espThrough)
-    s5:Slider("espFillT", "Fill transparency", 0, 1, D.espFillT, 2)
-    s5:Slider("espOutT", "Outline transparency", 0, 1, D.espOutT, 2)
-    s5:Toggle("espPulse", "Pulse", D.espPulse)
-    s5:Label("Roblox draws ~31 highlights at once; the nearest players get them first (shared with Cosmetics).")
+    local gc = s5:Group("espChams", "Highlight nearest players", D.espChams)
+    gc:Toggle("espThrough", "See through walls", D.espThrough)
+    gc:Slider("espFillT", "Fill transparency", 0, 1, D.espFillT, 2)
+    gc:Slider("espOutT", "Outline transparency", 0, 1, D.espOutT, 2)
+    gc:Toggle("espPulse", "Pulse", D.espPulse)
+    gc:Label("Roblox draws ~31 highlights at once; the nearest players get them first (shared with Cosmetics).")
 
     local sk = tPlayers:Section("L", "Skeleton and head", nil)
     local kg = sk:Group("espSkel", "Skeleton", D.espSkel)
     kg:Slider("espSkelThick", "Line width", 1, 3, D.espSkelThick, 1, " px")
-    sk:Slider("espSkelRange", "Skeleton / head range", 30, 400, D.espSkelRange, 0, " st")
-    sk:Toggle("espHead", "Head circle", D.espHead)
-    sk:Label("Bones are drawn for the 12 nearest players inside the range. The head circle follows the real head size.")
+    kg:Slider("espSkelRange", "Skeleton / head range", 30, 400, D.espSkelRange, 0, " st")
+    kg:Toggle("espHead", "Head circle", D.espHead)
+    kg:Label("Bones are drawn for the 12 nearest players inside the range. The head circle follows the real head size.")
 
     local s6 = tPlayers:Section("R", "Radar", nil)
     local rg = s6:Group("radarOn", "Radar mini-map", D.radarOn)
@@ -43182,14 +43654,13 @@ do
     rg:Toggle("radarCone", "View cone", D.radarCone)
     rg:Toggle("radarHeight", "Arrows for players above / below", D.radarHeight)
     rg:Toggle("radarTeam", "Show teammates", D.radarTeam)
-    s6:Label("Rotates with your camera. Faded dots on the edge are players beyond the range.")
+    rg:Label("Rotates with your camera. Faded dots on the edge are players beyond the range.")
 end
 
-local tChar = UITab("ESP Look", "ic_camera", "vis")
-do
+local function buildCharPreview(tab)
     local CHAR_SHOW = { "My selection" }
     for _, n in ipairs(ACC.ORDER) do CHAR_SHOW[#CHAR_SHOW + 1] = n end
-    local s = tChar:Section("L", "Character preview", nil)
+    local s = tab:Section("R", "Character preview", nil)
     CHAR.mountPreview(s:Custom(300))
     s:Dropdown("charShow", "Show", CHAR_SHOW, D.charShow, false)
     s:Segment("charView", "View", { "Spin", "Front", "Back", "Side" }, D.charView)
@@ -43210,52 +43681,21 @@ do
     end)
     s:Label("Shows your own avatar. Choose what to wear in the Accessories tab, or pick one model in Show to look at it alone. Drag the picture to turn it.")
 
-    local e = tChar:Section("R", "ESP preview", nil)
-    CHAR.mountEsp(e:Custom(300))
-    e:Slider("espPvHp", "Preview health", 0.05, 1, D.espPvHp, 2)
-    e:Segment("espColor", "Colour", { "Custom", "Team", "Health", "Rainbow" }, D.espColor)
-    e:Hue("espH", "Custom hue", D.espH)
-    e:Slider("espS", "Custom saturation", 0, 1, D.espS, 2)
-
-    local s2 = tChar:Section("R", "ESP box", nil)
-    s2:Dropdown("espBox", "Style", { "Corners", "Brackets", "Box", "Rounded", "Glow", "Off" }, D.espBox, false)
-    s2:Slider("espThick", "Thickness", 1, 4, D.espThick, 1, " px")
-    s2:Segment("espFillStyle", "Fill", { "Gradient", "Solid", "Off" }, D.espFillStyle)
-    s2:Slider("espFill", "Fill transparency", 0.5, 1, D.espFill, 2)
-    s2:Slider("espWidth", "Box width", 0.6, 1.8, D.espWidth, 2, "x")
-    s2:Slider("espHeight", "Box height", 0.8, 1.3, D.espHeight, 2, "x")
-    s2:Toggle("espGrad", "Two-colour outline and fill", D.espGrad)
-    s2:Toggle("espGradSpin", "Animated outline", D.espGradSpin)
-    s2:Toggle("espGlow", "Soft glow around the box", D.espGlow)
-
-    local s3 = tChar:Section("R", "ESP labels", nil)
-    s3:Toggle("espNames", "Name", D.espNames)
-    s3:Segment("espNameMode", "Name shows", { "Display", "Username", "Both" }, D.espNameMode)
-    s3:Toggle("espPill", "Dark pills behind text", D.espPill)
-    s3:Slider("espText", "Text size", 9, 22, D.espText, 0)
-    s3:Toggle("espHealth", "Health bar", D.espHealth)
-    s3:Segment("espHpPos", "Health bar position", { "Above", "Below", "Left", "Right" }, D.espHpPos)
-    s3:Segment("espHpStyle", "Health bar style", { "Smooth", "Segments", "Capsule" }, D.espHpStyle)
-    s3:Toggle("espHpGrad", "Colour by health", D.espHpGrad)
-    s3:Toggle("espHpText", "Health number", D.espHpText)
-    s3:Toggle("espHpGhost", "Damage chip (white trail after a hit)", D.espHpGhost)
-    s3:Toggle("espHpPulse", "Pulse when health is low", D.espHpPulse)
-    s3:Toggle("espDist", "Distance", D.espDist)
-    s3:Toggle("espTool", "Held tool", D.espTool)
-
 end
+
 local tAva = UITab("Avatar", "ic_ghost", "vis")
 do
     local s = tAva:Section("L", "Body", "ava")
     s:Segment("avaTarget", "Apply to", { "Self", "Others", "All" }, D.avaTarget)
-    s:Toggle("avaHeadless", "Headless", D.avaHeadless)
-    s:Toggle("avaHeadAcc", "Also hide hats / hair / face items", D.avaHeadAcc)
+    local gh = s:Group("avaHeadless", "Headless", D.avaHeadless)
+    gh:Toggle("avaHeadAcc", "Also hide hats / hair / face items", D.avaHeadAcc)
+    gh:Label("Headless hides the head and face.")
     local k = s:Group("avaKor", "Korblox right leg", D.avaKor)
     k:Segment("avaKorMode", "Method", { "Auto", "Mesh ID", "Bone leg" }, D.avaKorMode)
     k:Hue("avaKorH", "Bone leg glow colour", D.avaKorH)
     local ks = k:Label("")
     AVA.onKStatus = function(t) ks.Text = t end
-    s:Label("Headless hides the head and face. Korblox uses the community mesh ids when your executor may write MeshId, otherwise it builds an armoured bone leg from parts (works everywhere).")
+    k:Label("Korblox uses the community mesh ids when your executor may write MeshId, otherwise it builds an armoured bone leg from parts (works everywhere).")
 
     local c = tAva:Section("R", "Copy someone's look", "ava")
     local dd = c:Dropdown("avaPick", "Player", AVA.playerLabels(), D.avaPick, false)
@@ -43275,34 +43715,32 @@ UIX.othersLbl = {}
 local tAcc = UITab("Accessories", "ic_feather", "vis")
 do
     local s = tAcc:Section("L", "3D accessories", "acc")
-    s:Toggle("accOn", "Accessories", D.accOn)
-    s:Segment("accTarget", "Target", { "Self", "Others", "All" }, D.accTarget)
-    UIX.othersLbl[#UIX.othersLbl + 1] = s:Label(FX.othersStatus().text)
-    s:Dropdown("accPreset", "Quick looks", ACC.PRESET_NAMES, D.accPreset, false, function(v) ACC.applyPreset(v) end)
-    s:Slider("accScale", "Size", 0.5, 2, D.accScale, 2, "x")
-    s:Slider("accOpacity", "Opacity", 0.2, 1, D.accOpacity, 2)
-    s:Toggle("accAnim", "Animate (flap, sway, spin)", D.accAnim)
-    s:Toggle("wingFx", "Wing effects (feathers, embers, dust)", D.wingFx)
-    s:Slider("wingFxAmt", "Wing effect amount", 0.2, 2, D.wingFxAmt, 2, "x")
-    s:Dropdown("accMat", "Main material", ACC.MATS, D.accMat, false)
-    s:Toggle("meshOn", "Smooth models (generated meshes)", D.meshOn)
-    s:Dropdown("meshDetail", "Model detail", { "Low", "Normal", "High" }, D.meshDetail, false, function(v) MESH.setDetail(v) end)
-    local mst = s:Label(MESH.stateText())
-    MESH.onStatus = function() mst.Text = MESH.stateText() end
-    s:Label("Real 3D models welded to your body - they stay on from every camera angle. See them in the ESP Look tab.")
-
-    local sc = tAcc:Section("L", "Accessory colour", "acc")
-    sc:Toggle("accCustom", "Custom colours (else each model's own)", D.accCustom)
-    sc:Hue("accH", "Main hue", D.accH)
-    sc:Hue("accH2", "Glow hue", D.accH2)
-    sc:Slider("accS", "Saturation", 0, 1, D.accS, 2)
-    sc:Toggle("accRainbow", "Rainbow", D.accRainbow)
-
-    local sm = tAcc:Section("R", "Models", "acc")
+    local g = s:Group("accOn", "Accessories", D.accOn)
+    g:Segment("accTarget", "Target", { "Self", "Others", "All" }, D.accTarget)
+    UIX.othersLbl[#UIX.othersLbl + 1] = g:Label(FX.othersStatus().text)
+    g:Dropdown("accPreset", "Quick looks", ACC.PRESET_NAMES, D.accPreset, false, function(v) ACC.applyPreset(v) end)
     for _, cat in ipairs(ACC.CATS) do
-        sm:Dropdown("acc_" .. cat, cat, ACC.BY_CAT[cat], D["acc_" .. cat], true)
+        g:Dropdown("acc_" .. cat, cat, ACC.BY_CAT[cat], D["acc_" .. cat], true)
     end
-    sm:Button("Take everything off", function() ACC.setSelection({}) end)
+    g:Button("Take everything off", function() ACC.setSelection({}) end)
+    g:Slider("accScale", "Size", 0.5, 2, D.accScale, 2, "x")
+    g:Slider("accOpacity", "Opacity", 0.2, 1, D.accOpacity, 2)
+    g:Toggle("accAnim", "Animate (flap, sway, spin)", D.accAnim)
+    g:Toggle("wingFx", "Wing effects (feathers, embers, dust)", D.wingFx)
+    g:Slider("wingFxAmt", "Wing effect amount", 0.2, 2, D.wingFxAmt, 2, "x")
+    g:Dropdown("accMat", "Main material", ACC.MATS, D.accMat, false)
+    g:Toggle("meshOn", "Smooth models (generated meshes)", D.meshOn)
+    g:Dropdown("meshDetail", "Model detail", { "Low", "Normal", "High" }, D.meshDetail, false, function(v) MESH.setDetail(v) end)
+    local mst = g:Label(MESH.stateText())
+    MESH.onStatus = function() mst.Text = MESH.stateText() end
+    g:Toggle("accCustom", "Custom colours (else each model's own)", D.accCustom)
+    g:Hue("accH", "Main hue", D.accH)
+    g:Hue("accH2", "Glow hue", D.accH2)
+    g:Slider("accS", "Saturation", 0, 1, D.accS, 2)
+    g:Toggle("accRainbow", "Rainbow", D.accRainbow)
+    g:Label("Real 3D models welded to your body - they stay on from every camera angle. Pick a model in the preview below to look at it alone.")
+
+    buildCharPreview(tAcc)
 end
 
 local tCat = UITab("Catalog", "ic_gem", "vis")
@@ -43312,12 +43750,12 @@ local tCos = UITab("Cosmetics", "ic_cosmetic", "vis")
 UIX.cosLbl = {}
 do
     local s = tCos:Section("L", "Cosmetics", "cos")
-    s:Toggle("cosOn", "Cosmetics (master switch)", D.cosOn)
-    s:Segment("cosTarget", "Target", { "Self", "Others", "All" }, D.cosTarget)
-    UIX.othersLbl[#UIX.othersLbl + 1] = s:Label(FX.othersStatus().text)
-    s:Toggle("cosRainbow", "Rainbow colours", D.cosRainbow)
-    s:Label("Switch an effect on and the master switch turns itself on. Others are only styled inside the range / budget of the optimizer.")
-    UIX.cosSum = s:Label(COS.summary())
+    local gm = s:Group("cosOn", "Cosmetics (master switch)", D.cosOn)
+    gm:Segment("cosTarget", "Target", { "Self", "Others", "All" }, D.cosTarget)
+    UIX.othersLbl[#UIX.othersLbl + 1] = gm:Label(FX.othersStatus().text)
+    gm:Toggle("cosRainbow", "Rainbow colours", D.cosRainbow)
+    gm:Label("Switch an effect on and the master switch turns itself on. Others are only styled inside the range / budget of the optimizer.")
+    UIX.cosSum = gm:Label(COS.summary())
 
     local function cosGroup(sec, key, title)
         local sub = sec:Group(key, title, D[key], function(v)
@@ -43415,98 +43853,94 @@ end
 local tAura = UITab("Aura", "ic_aura", "vis")
 do
     local s = tAura:Section("L", "Aura", "fx")
-    s:Toggle("auraOn", "Aura", D.auraOn)
-    s:Segment("auraTarget", "Target", { "Self", "Others", "All" }, D.auraTarget)
-    s:Dropdown("auraTypes", "Types", FX.AURA_ORDER, D.auraTypes, true)
-    s:Slider("auraRange", "Range for other players (all effects)", 20, 1000, D.auraRange, 0, " st")
-    UIX.othersLbl[#UIX.othersLbl + 1] = s:Label(FX.othersStatus().text)
-    s:Slider("auraSize", "Size", 3, 30, D.auraSize, 0)
-    s:Slider("auraRate", "Density", 5, 150, D.auraRate, 0, "%")
-    s:Slider("auraGlow", "Brightness", 10, 100, D.auraGlow, 0, "%")
-    s:Slider("auraSpeed", "Speed", 10, 150, D.auraSpeed, 0, "%")
-
-    local s2 = tAura:Section("L", "Aura colour", "fx")
-    s2:Toggle("auraCustom", "Custom colour (else per-type)", D.auraCustom)
-    s2:Hue("auraH", "Hue", D.auraH)
-    s2:Slider("auraS", "Saturation", 0, 1, D.auraS, 2)
-    s2:Toggle("auraRainbow", "Rainbow", D.auraRainbow)
+    local g = s:Group("auraOn", "Aura", D.auraOn)
+    g:Segment("auraTarget", "Target", { "Self", "Others", "All" }, D.auraTarget)
+    g:Dropdown("auraTypes", "Types", FX.AURA_ORDER, D.auraTypes, true)
+    g:Slider("auraRange", "Range for other players (all effects)", 20, 1000, D.auraRange, 0, " st")
+    UIX.othersLbl[#UIX.othersLbl + 1] = g:Label(FX.othersStatus().text)
+    g:Slider("auraSize", "Size", 3, 30, D.auraSize, 0)
+    g:Slider("auraRate", "Density", 5, 150, D.auraRate, 0, "%")
+    g:Slider("auraGlow", "Brightness", 10, 100, D.auraGlow, 0, "%")
+    g:Slider("auraSpeed", "Speed", 10, 150, D.auraSpeed, 0, "%")
+    g:Divider("Colour")
+    g:Toggle("auraCustom", "Custom colour (else per-type)", D.auraCustom)
+    g:Hue("auraH", "Hue", D.auraH)
+    g:Slider("auraS", "Saturation", 0, 1, D.auraS, 2)
+    g:Toggle("auraRainbow", "Rainbow", D.auraRainbow)
 
     local s4 = tAura:Section("R", "Ground circle and rings", "fx")
-    s4:Toggle("fxGround", "Lie flat on the surface", D.fxGround)
-    s4:Slider("fxGroundSmooth", "Glide speed", 3, 30, D.fxGroundSmooth, 0)
-    s4:Label("On: the jump circle, the aura rings on the floor and the ground seal settle onto the real texture (kerbs, stairs, slopes) and glide smoothly instead of being nailed to your feet. Off: the old rigid feet attachment.")
-    s4:Toggle("circleOn", "Circle on jump / landing", false)
-    s4:Segment("circleTarget", "Target", { "Self", "Others", "All" }, "Self")
-    s4:Dropdown("circleStyle", "Style", FX.CIRCLE_STYLES, D.circleStyle, false)
-    s4:Slider("circleSize", "Size", 1, 20, D.circleSize, 1)
-    s4:Slider("circleLife", "Life", 1, 20, D.circleLife, 1, " s")
-    s4:Slider("circleGrow", "Grow", 100, 600, D.circleGrow, 0, "%")
-    s4:Slider("circleSpin", "Spin", -200, 200, D.circleSpin, 0)
-    s4:Button("Test circle", function() FX.testCircle() end)
+    local gg = s4:Group("fxGround", "Lie flat on the surface", D.fxGround)
+    gg:Slider("fxGroundSmooth", "Glide speed", 3, 30, D.fxGroundSmooth, 0)
+    gg:Label("On: the jump circle, the aura rings on the floor and the ground seal settle onto the real texture (kerbs, stairs, slopes) and glide smoothly instead of being nailed to your feet. Off: the old rigid feet attachment.")
+    local gc = s4:Group("circleOn", "Circle on jump / landing", false)
+    gc:Segment("circleTarget", "Target", { "Self", "Others", "All" }, "Self")
+    gc:Dropdown("circleStyle", "Style", FX.CIRCLE_STYLES, D.circleStyle, false)
+    gc:Slider("circleSize", "Size", 1, 20, D.circleSize, 1)
+    gc:Slider("circleLife", "Life", 1, 20, D.circleLife, 1, " s")
+    gc:Slider("circleGrow", "Grow", 100, 600, D.circleGrow, 0, "%")
+    gc:Slider("circleSpin", "Spin", -200, 200, D.circleSpin, 0)
+    gc:Button("Test circle", function() FX.testCircle() end)
 end
 
 local tTrail = UITab("Trail", "ic_trail", "vis")
 do
     local s = tTrail:Section("L", "Trail", "fx")
-    s:Toggle("trailOn", "Trail", D.trailOn)
-    s:Segment("trailTarget", "Target", { "Self", "Others", "All" }, D.trailTarget)
-    s:Dropdown("trailStyle", "Style", FX.TRAIL_STYLES, D.trailStyle, false)
-    s:Dropdown("trailHeight", "Height", FX.TRAIL_HEIGHTS, D.trailHeight, false)
-    s:Toggle("trailSplit", "Split (two feet)", D.trailSplit)
-    s:Toggle("trailAlways", "Always on (even standing)", D.trailAlways)
-    s:Button("Test trail (7 s)", function() FX.testTrail() end)
-
-    local s2 = tTrail:Section("R", "Shape", "fx")
-    s2:Slider("trailSize", "Size", 1, 20, D.trailSize, 1)
-    s2:Slider("trailLife", "Length", 1, 15, D.trailLife, 1)
-    s2:Slider("trailDensity", "Density", 10, 400, D.trailDensity, 0, "%")
-    s2:Slider("trailBright", "Brightness", 10, 100, D.trailBright, 0, "%")
-    s2:Slider("trailSpread", "Speed / spread", 0, 150, D.trailSpread, 0, "%")
-    s2:Slider("trailDrift", "Drift", 0, 300, D.trailDrift, 0, "%")
-
-    local s3 = tTrail:Section("L", "Colour", "fx")
-    s3:Hue("trailH", "Main hue", D.trailH)
-    s3:Slider("trailS", "Main saturation", 0, 1, D.trailS, 2)
-    s3:Hue("trailH2", "Fade hue", D.trailH2)
-    s3:Slider("trailS2", "Fade saturation", 0, 1, D.trailS2, 2)
-    s3:Toggle("trailRainbow", "Rainbow", D.trailRainbow)
+    local g = s:Group("trailOn", "Trail", D.trailOn)
+    g:Segment("trailTarget", "Target", { "Self", "Others", "All" }, D.trailTarget)
+    g:Dropdown("trailStyle", "Style", FX.TRAIL_STYLES, D.trailStyle, false)
+    g:Dropdown("trailHeight", "Height", FX.TRAIL_HEIGHTS, D.trailHeight, false)
+    g:Toggle("trailSplit", "Split (two feet)", D.trailSplit)
+    g:Toggle("trailAlways", "Always on (even standing)", D.trailAlways)
+    g:Button("Test trail (7 s)", function() FX.testTrail() end)
+    g:Divider("Shape")
+    g:Slider("trailSize", "Size", 1, 20, D.trailSize, 1)
+    g:Slider("trailLife", "Length", 1, 15, D.trailLife, 1)
+    g:Slider("trailDensity", "Density", 10, 400, D.trailDensity, 0, "%")
+    g:Slider("trailBright", "Brightness", 10, 100, D.trailBright, 0, "%")
+    g:Slider("trailSpread", "Speed / spread", 0, 150, D.trailSpread, 0, "%")
+    g:Slider("trailDrift", "Drift", 0, 300, D.trailDrift, 0, "%")
+    g:Divider("Colour")
+    g:Hue("trailH", "Main hue", D.trailH)
+    g:Slider("trailS", "Main saturation", 0, 1, D.trailS, 2)
+    g:Hue("trailH2", "Fade hue", D.trailH2)
+    g:Slider("trailS2", "Fade saturation", 0, 1, D.trailS2, 2)
+    g:Toggle("trailRainbow", "Rainbow", D.trailRainbow)
 end
 
 local tKill = UITab("Kill FX", "ic_skull", "vis")
 do
     local s = tKill:Section("L", "Kill effect", "fx")
-    s:Toggle("killOn", "On death", D.killOn)
-    s:Dropdown("killStyle", "Style", FX.KILL_STYLES, D.killStyle, false)
-    s:Segment("killTarget", "Target", { "Others", "Self", "All" }, D.killTarget)
-    s:Button("Test kill effect", function() FX.testKill() end, true)
-    s:Button("Preview every style", function() FX.testKillAll() end)
-    s:Label("Each style is a timed sequence: build-up, flash, burst and afterglow. The test uses a copy of your own avatar a few steps in front of you.")
-
-    local s2 = tKill:Section("R", "Look", "fx")
-    s2:Hue("killH", "Hue", D.killH)
-    s2:Slider("killS", "Saturation", 0, 1, D.killS, 2)
-    s2:Slider("killScale", "Size", 0.5, 2.2, D.killScale, 2, "x")
-    s2:Toggle("killSeal", "Magic circle on the ground", D.killSeal)
-    s2:Toggle("kill3d", "Solid 3D parts (shards, ghost, beams)", D.kill3d)
-    s2:Toggle("killFlash", "Screen flash and glow", D.killFlash)
-    s2:Toggle("killBody", "Dissolve the body", D.killBody)
-    s2:Label("Sakura Burst and Blood Mist keep their own colours. Solid parts are skipped automatically when many effects play at once or the FPS governor is on a high tier.")
+    local g = s:Group("killOn", "On death", D.killOn)
+    g:Dropdown("killStyle", "Style", FX.KILL_STYLES, D.killStyle, false)
+    g:Segment("killTarget", "Target", { "Others", "Self", "All" }, D.killTarget)
+    g:Button("Test kill effect", function() FX.testKill() end, true)
+    g:Button("Preview every style", function() FX.testKillAll() end)
+    g:Label("Each style is a timed sequence: build-up, flash, burst and afterglow. The test uses a copy of your own avatar a few steps in front of you.")
+    g:Divider("Look")
+    g:Hue("killH", "Hue", D.killH)
+    g:Slider("killS", "Saturation", 0, 1, D.killS, 2)
+    g:Slider("killScale", "Size", 0.5, 2.2, D.killScale, 2, "x")
+    g:Toggle("killSeal", "Magic circle on the ground", D.killSeal)
+    g:Toggle("kill3d", "Solid 3D parts (shards, ghost, beams)", D.kill3d)
+    g:Toggle("killFlash", "Screen flash and glow", D.killFlash)
+    g:Toggle("killBody", "Dissolve the body", D.killBody)
+    g:Label("Sakura Burst and Blood Mist keep their own colours. Solid parts are skipped automatically when many effects play at once or the FPS governor is on a high tier.")
 end
 
 local tWorld = UITab("World", "ic_world", "vis")
 do
     local s = tWorld:Section("L", "Look", "world")
-    s:Toggle("master", "World visuals", false)
-    s:Dropdown("preset", "Preset", PRESET_NAMES, D.preset, false, function(v) W.applyPreset(v) end)
-    s:Toggle("skyLook", "Match look to chosen sky", D.skyLook)
-    s:Slider("smooth", "Transition time", 0.05, 2.5, D.smooth, 2, " s")
-    s:Label("Presets change sky, light, fog, bloom, grade, weather and vignette together, smoothly.")
+    local gm = s:Group("master", "World visuals", false)
+    gm:Dropdown("preset", "Preset", PRESET_NAMES, D.preset, false, function(v) W.applyPreset(v) end)
+    gm:Toggle("skyLook", "Match look to chosen sky", D.skyLook)
+    gm:Slider("smooth", "Transition time", 0.05, 2.5, D.smooth, 2, " s")
+    gm:Label("Presets change sky, light, fog, bloom, grade, weather and vignette together, smoothly.")
 
     local s2 = tWorld:Section("L", "Time and light", "world")
-    s2:Toggle("timeOn", "Control time of day", D.timeOn)
-    s2:Slider("time", "Clock time", 0, 24, D.time, 1, " h")
-    s2:Toggle("timeCycle", "Day / night cycle", D.timeCycle)
-    s2:Slider("timeLen", "Cycle length", 30, 900, D.timeLen, 0, " s")
+    local gt = s2:Group("timeOn", "Control time of day", D.timeOn)
+    gt:Slider("time", "Clock time", 0, 24, D.time, 1, " h")
+    gt:Toggle("timeCycle", "Day / night cycle", D.timeCycle)
+    gt:Slider("timeLen", "Cycle length", 30, 900, D.timeLen, 0, " s")
     s2:Slider("brightness", "Brightness", 0, 6, D.brightness, 1)
     s2:Slider("exposure", "Exposure", -2, 2, D.exposure, 2)
     s2:Toggle("shadows", "Shadows", D.shadows)
@@ -43535,16 +43969,16 @@ end
 local tSky = UITab("Sky", "ic_sky", "vis")
 do
     local sc = tSky:Section("L", "Sky clarity", "world")
-    sc:Toggle("skyClearOn", "Keep the sky visible", D.skyClearOn)
-    sc:Slider("skyClear", "Clarity", 0, 1, D.skyClear, 2)
-    sc:Toggle("skyFocus", "Sky focus (haze / clouds / blur off)", D.skyFocus)
-    sc:Label("Atmosphere haze, clouds, depth-of-field blur and bloom are thinned out so the skybox picture stays readable. 0 = the look exactly as set, 1 = nearly raw sky.")
+    local gk = sc:Group("skyClearOn", "Keep the sky visible", D.skyClearOn)
+    gk:Slider("skyClear", "Clarity", 0, 1, D.skyClear, 2)
+    gk:Toggle("skyFocus", "Sky focus (haze / clouds / blur off)", D.skyFocus)
+    gk:Label("Atmosphere haze, clouds, depth-of-field blur and bloom are thinned out so the skybox picture stays readable. 0 = the look exactly as set, 1 = nearly raw sky.")
 
     local s = tSky:Section("L", "Skybox", "world")
     s:Dropdown("skybox", "Sky", SKY_OPTIONS, D.skybox, false, function(v) W.onSkyPicked(v) end)
     s:Toggle("skyFade", "Dark dip between skies", D.skyFade)
-    s:Toggle("cycle", "Cycle skies", D.cycle)
-    s:Slider("cycleTime", "Cycle every", 10, 300, D.cycleTime, 0, " s")
+    local gy = s:Group("cycle", "Cycle skies", D.cycle)
+    gy:Slider("cycleTime", "Cycle every", 10, 300, D.cycleTime, 0, " s")
     s:Button("Random sky", function() W.randomSky() end)
     s:Label("Dark fantasy skies are listed first: Berserk / Hell / Gloom / Mystic.")
 
@@ -43669,8 +44103,8 @@ local tSeal = UITab("Seals", "ic_orbit", "vis")
 do
     local g = tSeal:Section("L", "All seals", "seal")
     g:Slider("sealGlow", "Glow", 0.3, 4, D.sealGlow, 1, "x")
-    g:Toggle("sealCycle", "Cycle through the diagrams", D.sealCycle)
-    g:Slider("sealCycleT", "Cycle time", 4, 60, D.sealCycleT, 0, " s")
+    local gcy = g:Group("sealCycle", "Cycle through the diagrams", D.sealCycle)
+    gcy:Slider("sealCycleT", "Cycle time", 4, 60, D.sealCycleT, 0, " s")
     g:Label("Ten hand-drawn diagrams: pentagram, hexagram, flower of life, astrolabe, zodiac, octagram, eclipse, rune wheel, orbits, Metatron. Extra layers use other diagrams and spin the other way.")
 
     local function modeSec(side, title, key, defs, extra)
@@ -43723,20 +44157,20 @@ do
     cg:Toggle("constForever", "Keep figures (no lifetime)", D.constForever)
     cg:Slider("constSpeed", "Sky drift speed", 0, 4, D.constSpeed, 2, "x")
     cg:Button("Generate a new sky", function() MISC.CONST.regenerate() end)
-    g:Label("Neat line figures (dipper, W, arcs, polygons, pentagrams, fans, trees...) are generated in front of the camera, drawn in line by line and drift together like a sky layer. Lines stay the same pixel width at any zoom. Thousands of stars cost more FPS: lower the count on a phone.")
+    cg:Label("Neat line figures (dipper, W, arcs, polygons, pentagrams, fans, trees...) are generated in front of the camera, drawn in line by line and drift together like a sky layer. Lines stay the same pixel width at any zoom. Thousands of stars cost more FPS: lower the count on a phone.")
 
-    local s2 = tConst:Section("R", "Look", "const")
-    s2:Hue("constHue", "Colour", D.constHue)
-    s2:Slider("constSat", "Saturation", 0, 1, D.constSat, 2)
-    s2:Toggle("constRainbow", "Rainbow", D.constRainbow)
-    s2:Slider("constGlow", "Glow", 0.2, 1.6, D.constGlow, 2, "x")
-    s2:Slider("constThick", "Line width", 0.4, 4, D.constThick, 2, "x")
-    s2:Toggle("constNodes", "Stars on the corners", D.constNodes)
-    s2:Slider("constNodeSize", "Star size", 0.3, 3, D.constNodeSize, 2, "x")
-    s2:Slider("constGap", "Gap between star and line", 0, 2, D.constGap, 2, "x")
-    s2:Slider("constMinElev", "Lowest above horizon", 0, 40, D.constMinElev, 0, " deg")
-    s2:Slider("constMaxElev", "Highest", 30, 88, D.constMaxElev, 0, " deg")
-    s2:Button("Constellation Night look (sky + figures)", function()
+    cg:Divider("Look")
+    cg:Hue("constHue", "Colour", D.constHue)
+    cg:Slider("constSat", "Saturation", 0, 1, D.constSat, 2)
+    cg:Toggle("constRainbow", "Rainbow", D.constRainbow)
+    cg:Slider("constGlow", "Glow", 0.2, 1.6, D.constGlow, 2, "x")
+    cg:Slider("constThick", "Line width", 0.4, 4, D.constThick, 2, "x")
+    cg:Toggle("constNodes", "Stars on the corners", D.constNodes)
+    cg:Slider("constNodeSize", "Star size", 0.3, 3, D.constNodeSize, 2, "x")
+    cg:Slider("constGap", "Gap between star and line", 0, 2, D.constGap, 2, "x")
+    cg:Slider("constMinElev", "Lowest above horizon", 0, 40, D.constMinElev, 0, " deg")
+    cg:Slider("constMaxElev", "Highest", 30, 88, D.constMaxElev, 0, " deg")
+    cg:Button("Constellation Night look (sky + figures)", function()
         W.applyPreset("Constellation Night")
         notify("Constellation Night", 2)
     end)
@@ -43744,6 +44178,23 @@ end
 
 local tScreen = UITab("Screen", "ic_screen", "vis")
 do
+    local ENG = MISC.ENG
+    local st = tScreen:Section("L", "Stretched resolution", "screen")
+    local sg = st:Group("stretchOn", "Stretch the picture", D.stretchOn)
+    sg:Dropdown("stretchPreset", "Aspect ratio", ENG.STRETCH, D.stretchPreset, false, function(v)
+        local y = ENG.stretchFor(v)
+        if y then
+            if Flags.stretchY then Flags.stretchY:Set(y, true) end
+            if Flags.stretchX then Flags.stretchX:Set(1, true) end
+        end
+    end)
+    sg:Slider("stretchY", "Vertical scale", 0.35, 1.8, D.stretchY, 2, "x", function()
+        if cfg.stretchPreset ~= "Custom" and Flags.stretchPreset then Flags.stretchPreset:Set("Custom", true) end
+    end)
+    sg:Slider("stretchX", "Horizontal scale", 0.6, 1.8, D.stretchX, 2, "x")
+    sg:Toggle("stretchFlip", "Flip the direction", D.stretchFlip)
+    sg:Label("Pick the shape the picture should look like. 4:3 on a wide screen makes players wider, 21:9 makes them thinner. A preset follows your window when you resize it; moving the vertical slider switches to Custom. If the picture goes the wrong way, switch Flip the direction on.")
+
     local s = tScreen:Section("L", "Camera", "screen")
     local f = s:Group("fovOn", "Field of view", D.fovOn)
     f:Slider("fov", "FOV", 30, 120, D.fov, 0)
@@ -43758,10 +44209,10 @@ do
     v:Slider("vigAmt", "Strength", 0.05, 1, D.vigAmt, 2)
 
     local s5 = tScreen:Section("L", "Zoom", nil)
-    s5:Toggle("zoomOn", "Hold-to-zoom", D.zoomOn)
-    s5:Keybind("zoomKey", "Zoom key (hold)", D.zoomKey)
-    s5:Slider("zoomFov", "Zoomed FOV", 8, 70, D.zoomFov, 0)
-    s5:Button("Zoom toggle (touch)", function() SC.zoomHeld = not SC.zoomHeld end)
+    local gz = s5:Group("zoomOn", "Hold-to-zoom", D.zoomOn)
+    gz:Keybind("zoomKey", "Zoom key (hold)", D.zoomKey)
+    gz:Slider("zoomFov", "Zoomed FOV", 8, 70, D.zoomFov, 0)
+    gz:Button("Zoom toggle (touch)", function() SC.zoomHeld = not SC.zoomHeld end)
 end
 
 local tFilters = UITab("Filters", "ic_film", "vis")
@@ -43770,7 +44221,7 @@ do
     local f = s:Group("fltOn", "Filter", D.fltOn)
     f:Dropdown("fltName", "Look", HUD.FILTER_LIST, D.fltName, false)
     f:Slider("fltAmt", "Strength", 0.1, 1, D.fltAmt, 2)
-    s:Label("Night Vision, Noir, Sepia, Cyberpunk, Anime Pop, Dreamy, Vintage, Blood Rage, Frostbite, Toxic. Blends smoothly.")
+    f:Label("Night Vision, Noir, Sepia, Cyberpunk, Anime Pop, Dreamy, Vintage, Blood Rage, Frostbite, Toxic. Blends smoothly.")
 
     local s2 = tFilters:Section("R", "Film", nil)
     local g = s2:Group("grainOn", "Film grain", D.grainOn)
@@ -43789,53 +44240,53 @@ end
 local tCross = UITab("Crosshair", "ic_crosshair", "vis")
 do
     local s = tCross:Section("L", "Crosshair", nil)
-    s:Toggle("chOn", "Custom crosshair", D.chOn)
-    s:Dropdown("chStyle", "Style", COMBAT.CH_STYLES, D.chStyle, false)
-    s:Slider("chLen", "Size", 3, 30, D.chLen, 0, " px")
-    s:Slider("chThick", "Thickness", 1, 6, D.chThick, 1, " px")
-    s:Slider("chGap", "Gap", 0, 24, D.chGap, 0, " px")
-    s:Slider("chDyn", "Spread while moving", 0, 30, D.chDyn, 0, " px")
-    s:Toggle("chDot", "Centre dot", D.chDot)
-    s:Slider("chDotSize", "Dot size", 1, 8, D.chDotSize, 0, " px")
-    s:Toggle("chOutline", "Dark outline", D.chOutline)
-    s:Hue("chH", "Hue", D.chH)
-    s:Slider("chS", "Saturation", 0, 1, D.chS, 2)
-    s:Toggle("chRainbow", "Rainbow", D.chRainbow)
-    s:Slider("chSpin", "Spin", -300, 300, D.chSpin, 0)
-    s:Segment("chFollow", "Position", { "Auto", "Center", "Mouse" }, D.chFollow)
-    s:Toggle("chHideCursor", "Hide system cursor", D.chHideCursor)
+    local gch = s:Group("chOn", "Custom crosshair", D.chOn)
+    gch:Dropdown("chStyle", "Style", COMBAT.CH_STYLES, D.chStyle, false)
+    gch:Slider("chLen", "Size", 3, 30, D.chLen, 0, " px")
+    gch:Slider("chThick", "Thickness", 1, 6, D.chThick, 1, " px")
+    gch:Slider("chGap", "Gap", 0, 24, D.chGap, 0, " px")
+    gch:Slider("chDyn", "Spread while moving", 0, 30, D.chDyn, 0, " px")
+    gch:Toggle("chDot", "Centre dot", D.chDot)
+    gch:Slider("chDotSize", "Dot size", 1, 8, D.chDotSize, 0, " px")
+    gch:Toggle("chOutline", "Dark outline", D.chOutline)
+    gch:Hue("chH", "Hue", D.chH)
+    gch:Slider("chS", "Saturation", 0, 1, D.chS, 2)
+    gch:Toggle("chRainbow", "Rainbow", D.chRainbow)
+    gch:Slider("chSpin", "Spin", -300, 300, D.chSpin, 0)
+    gch:Segment("chFollow", "Position", { "Auto", "Center", "Mouse" }, D.chFollow)
+    gch:Toggle("chHideCursor", "Hide system cursor", D.chHideCursor)
 
     local s2 = tCross:Section("R", "Hit marker", nil)
-    s2:Toggle("hitOn", "Hit marker (damage near crosshair)", D.hitOn)
-    s2:Slider("hitRadius", "Detect radius", 20, 300, D.hitRadius, 0, " px")
-    s2:Button("Test hit", function() COMBAT.testHit() end)
-    s2:Button("Test kill", function() COMBAT.testKill() end)
+    local ghit = s2:Group("hitOn", "Hit marker (damage near crosshair)", D.hitOn)
+    ghit:Slider("hitRadius", "Detect radius", 20, 300, D.hitRadius, 0, " px")
+    ghit:Button("Test hit", function() COMBAT.testHit() end)
+    ghit:Button("Test kill", function() COMBAT.testKill() end)
 
     local sq = tCross:Section("R", "Hit and kill sounds", nil)
-    sq:Toggle("sfxHitOn", "Sound on a hit", D.sfxHitOn)
-    sq:Dropdown("sfxHit", "Hit sound", UIX.sfx.HIT, D.sfxHit, false, function() UIX.sfx.preview("hit") end)
-    sq:Toggle("sfxKillOn", "Sound on a kill", D.sfxKillOn)
-    sq:Dropdown("sfxKill", "Kill sound", UIX.sfx.KILL, D.sfxKill, false, function() UIX.sfx.preview("kill") end)
-    sq:Label("Plays when damage lands near your crosshair, the same test the hit marker uses.")
+    local gsh = sq:Group("sfxHitOn", "Sound on a hit", D.sfxHitOn)
+    gsh:Dropdown("sfxHit", "Hit sound", UIX.sfx.HIT, D.sfxHit, false, function() UIX.sfx.preview("hit") end)
+    gsh:Label("Plays when damage lands near your crosshair, the same test the hit marker uses.")
+    local gsk = sq:Group("sfxKillOn", "Sound on a kill", D.sfxKillOn)
+    gsk:Dropdown("sfxKill", "Kill sound", UIX.sfx.KILL, D.sfxKill, false, function() UIX.sfx.preview("kill") end)
 
     local s3 = tCross:Section("R", "Damage numbers", nil)
-    s3:Toggle("dmgOn", "Floating damage numbers", D.dmgOn)
-    s3:Segment("dmgStyle", "Motion", { "Pop", "Float", "Arc" }, D.dmgStyle)
-    s3:Slider("dmgSize", "Size", 0.5, 2.5, D.dmgSize, 2, "x")
-    s3:Slider("dmgLife", "Lifetime", 0.4, 2.5, D.dmgLife, 2, " s")
-    s3:Slider("dmgCrit", "Big-hit threshold", 5, 200, D.dmgCrit, 0, " hp")
-    s3:Hue("dmgH", "Hue", D.dmgH)
-    s3:Slider("dmgS", "Saturation", 0, 1, D.dmgS, 2)
-    s3:Hue("dmgCritH", "Big-hit hue", D.dmgCritH)
-    s3:Toggle("dmgSelf", "Also show damage I take", D.dmgSelf)
-    s3:Toggle("dmgHeal", "Show healing (green)", D.dmgHeal)
-    s3:Slider("dmgRange", "Range", 30, 1000, D.dmgRange, 0, " st")
-    s3:Label("Reads Humanoid health changes. Visual feedback only, nothing is sent to the game.")
+    local gdmg = s3:Group("dmgOn", "Floating damage numbers", D.dmgOn)
+    gdmg:Segment("dmgStyle", "Motion", { "Pop", "Float", "Arc" }, D.dmgStyle)
+    gdmg:Slider("dmgSize", "Size", 0.5, 2.5, D.dmgSize, 2, "x")
+    gdmg:Slider("dmgLife", "Lifetime", 0.4, 2.5, D.dmgLife, 2, " s")
+    gdmg:Slider("dmgCrit", "Big-hit threshold", 5, 200, D.dmgCrit, 0, " hp")
+    gdmg:Hue("dmgH", "Hue", D.dmgH)
+    gdmg:Slider("dmgS", "Saturation", 0, 1, D.dmgS, 2)
+    gdmg:Hue("dmgCritH", "Big-hit hue", D.dmgCritH)
+    gdmg:Toggle("dmgSelf", "Also show damage I take", D.dmgSelf)
+    gdmg:Toggle("dmgHeal", "Show healing (green)", D.dmgHeal)
+    gdmg:Slider("dmgRange", "Range", 30, 1000, D.dmgRange, 0, " st")
+    gdmg:Label("Reads Humanoid health changes. Visual feedback only, nothing is sent to the game.")
 
     local s4 = tCross:Section("L", "Hurt vignette", nil)
-    s4:Toggle("hurtOn", "Red flash when hurt + low-HP pulse", D.hurtOn)
-    s4:Slider("hurtAmt", "Strength", 0.1, 1, D.hurtAmt, 2)
-    s4:Slider("lowHp", "Low-HP below", 0.1, 0.6, D.lowHp, 2)
+    local ghurt = s4:Group("hurtOn", "Red flash when hurt + low-HP pulse", D.hurtOn)
+    ghurt:Slider("hurtAmt", "Strength", 0.1, 1, D.hurtAmt, 2)
+    ghurt:Slider("lowHp", "Low-HP below", 0.1, 0.6, D.lowHp, 2)
 end
 
 local tHud = UITab("HUD", "ic_hud", "vis")
@@ -43868,11 +44319,31 @@ do
     g:Slider("cursSize", "Effect size", 20, 140, D.cursSize, 0, " px")
     g:Toggle("cursTrail", "Mouse trail", D.cursTrail)
     g:Slider("cursTrailLen", "Trail length", 4, 30, D.cursTrailLen, 0)
-    s:Label("Ripples on every click / tap, a glowing trail behind the mouse.")
+    g:Label("Ripples on every click / tap, a glowing trail behind the mouse.")
 end
 
 local tClient = UITab("Client", "ic_rocket", "vis")
 do
+    local sl = tClient:Section("R", "Layout", nil)
+    local layoutState
+    local function layoutText()
+        local n = #UIX.mov.active()
+        local m = UIX.mov.count()
+        return ("%d panel%s on  |  %d moved"):format(n, n == 1 and "" or "s", m)
+    end
+    sl:Button("Edit layout (drag the panels)", function()
+        if UIX.mov.edit(true) then notify("Drag a panel, then press Done", 2.5) end
+    end, true)
+    sl:Button("Reset layout", function()
+        UIX.mov.resetAll()
+        if layoutState then layoutState.Text = layoutText() end
+        notify("Panels are back in their places", 2)
+    end)
+    sl:Toggle("hudSnap", "Snap to edges and centre", D.hudSnap)
+    layoutState = sl:Label(layoutText())
+    UIX.onLayout = function() if layoutState then layoutState.Text = layoutText() end end
+    sl:Label("Moves the watermark, module list, notifications, keybinds, target HUD, health bar, info overlay and keystrokes. The menu hides while you drag.")
+
     local s = tClient:Section("L", "Module list", nil)
     local g = s:Group("mcList", "Module list", D.mcList)
     g:Dropdown("mcListPos", "Position", MC.LIST_POS, D.mcListPos, false)
@@ -43882,21 +44353,21 @@ do
     g:Slider("mcListSize", "Text size", 10, 22, D.mcListSize, 0)
     g:Slider("mcListY", "Distance from the edge", 0, 300, D.mcListY, 0, " px")
     g:Segment("mcListSort", "Order", { "Length", "Alphabet" }, D.mcListSort)
-    s:Label("Every module that is on, as a rounded plate. Colours follow the menu theme.")
+    g:Label("Every module that is on, as a rounded plate. Colours follow the menu theme.")
 
     local sn = tClient:Section("L", "Panels", nil)
     sn:Toggle("mcMark", "Watermark (name, fps, ping)", D.mcMark)
-    sn:Toggle("mcToast", "Notification when a module switches", D.mcToast)
-    sn:Dropdown("mcToastPos", "Notification position", MC.TOAST_POS, D.mcToastPos, false)
-    sn:Toggle("mcSnd", "Client switch sounds", D.mcSnd)
-    sn:Label("Panels stay out of the way while the menu is open.")
+    local gn = sn:Group("mcToast", "Notification when a module switches", D.mcToast)
+    gn:Dropdown("mcToastPos", "Notification position", MC.TOAST_POS, D.mcToastPos, false)
+    gn:Toggle("mcSnd", "Client switch sounds", D.mcSnd)
+    gn:Label("Panels stay out of the way while the menu is open.")
 
     local sk = tClient:Section("R", "Keybinds", nil)
     local k = sk:Group("mcKeys", "Keybinds panel", D.mcKeys)
     k:Segment("mcKeysSide", "Side", MC.KEYS_SIDE, D.mcKeysSide)
     k:Slider("mcKeysY", "Distance from the top", 40, 600, D.mcKeysY, 0, " px")
     k:Toggle("mcKeysActive", "Only modules that are on", D.mcKeysActive)
-    sk:Label("Lists every switch that has a key. Set a key by right-clicking the name of a switch.")
+    k:Label("Lists every switch that has a key. Set a key by right-clicking the name of a switch.")
 
     local st = tClient:Section("R", "Target HUD", nil)
     local t = st:Group("mcTarget", "Target HUD", D.mcTarget)
@@ -43905,12 +44376,12 @@ do
     t:Slider("mcTargetRange", "Pick radius around crosshair", 60, 600, D.mcTargetRange, 0, " px")
     t:Slider("mcTargetDist", "Max distance", 30, 1000, D.mcTargetDist, 0, " st")
     t:Slider("mcTargetKeep", "Keep after a hit", 0, 8, D.mcTargetKeep, 1, " s")
-    st:Label("Avatar, name, health and distance of the aim target, the player nearest to your crosshair, or the last one you hit.")
+    t:Label("Avatar, name, health and distance of the aim target, the player nearest to your crosshair, or the last one you hit.")
 
     local sh = tClient:Section("L", "Health bar", nil)
     local h = sh:Group("mcHp", "Health bar", D.mcHp)
     h:Slider("mcHudY", "Height above the bottom", 20, 400, D.mcHudY, 0, " px")
-    sh:Label("Your own health with a trailing bar.")
+    h:Label("Your own health with a trailing bar.")
 end
 
 local tPlayerPg = UITab("Player", "ic_players", nil)
@@ -43920,10 +44391,10 @@ local tOpt = UITab("Optimize", "ic_optimize", "set")
 local optStats
 do
     local s = tOpt:Section("L", "Adaptive quality", "opt")
-    s:Toggle("optAuto", "Auto lower effects when FPS drops", D.optAuto)
-    s:Slider("optTarget", "Target FPS", 20, 144, D.optTarget, 0)
-    optStats = s:Label("")
-    s:Label("The governor thins out our own particles, blur, bloom and constellations in 4 steps, then restores them.")
+    local g = s:Group("optAuto", "Auto lower effects when FPS drops", D.optAuto)
+    g:Slider("optTarget", "Target FPS", 20, 144, D.optTarget, 0)
+    optStats = g:Label("")
+    g:Label("The governor thins out our own particles, blur, bloom and constellations in 4 steps, then restores them.")
 
     local s2 = tOpt:Section("R", "Game optimizer", "opt")
     s2:Segment("optQuality", "Graphics quality", { "Game", "Low", "Medium", "High" }, D.optQuality)
@@ -43983,20 +44454,6 @@ do
         showState(v and (cfg.ffName .. " = " .. v) or "Cannot read this flag (unknown name or no getfflag)")
     end)
 
-    local s3 = tEngine:Section("R", "Stretched resolution", nil)
-    local g = s3:Group("stretchOn", "Stretch the picture", D.stretchOn)
-    g:Dropdown("stretchPreset", "Look like", ENG.STRETCH, D.stretchPreset, false, function(v)
-        local y = ENG.stretchFor(v)
-        if y then
-            if Flags.stretchY then Flags.stretchY:Set(y, true) end
-            if Flags.stretchX then Flags.stretchX:Set(1, true) end
-        end
-    end)
-    g:Slider("stretchY", "Vertical squash", 0.35, 1, D.stretchY, 2, "x")
-    g:Slider("stretchX", "Horizontal stretch", 1, 1.8, D.stretchX, 2, "x")
-    g:Toggle("stretchFlip", "Flip the direction", D.stretchFlip)
-    s3:Label("Scales the camera after the game's own camera runs, like a stretched 4:3 resolution: players look wider. If the picture gets narrower instead, switch Flip the direction on.")
-
     local s4 = tEngine:Section("R", "Frame rate", nil)
     local g2 = s4:Group("fpsOn", "Frame rate cap", D.fpsOn)
     g2:Slider("fpsCap", "Cap", 30, 360, D.fpsCap, 0, " fps")
@@ -44010,8 +44467,8 @@ do
     s:ThemeGrid()
 
     local s2 = tThemes:Section("L", "Colours and glass", "ui")
-    s2:Toggle("accentOn", "Custom accent colour", D.accentOn)
-    s2:Hue("accentH", "Accent hue", D.accentH)
+    local ga = s2:Group("accentOn", "Custom accent colour", D.accentOn)
+    ga:Hue("accentH", "Accent hue", D.accentH)
     s2:Slider("glass", "Glass (see-through panels)", 0, 0.6, D.glass, 2)
     s2:Slider("uiAnim", "Animation speed", 0.4, 2.5, D.uiAnim, 2, "x")
     s2:Toggle("uiLite", "Lite mode (no background motion)", D.uiLite)
@@ -44044,13 +44501,13 @@ do
     s4:Slider("bgPartN", "Amount", 0, 24, D.bgPartN, 0)
 
     local s5 = tThemes:Section("R", "Menu button", "ui")
-    s5:Toggle("fabShow", "Show round button", D.fabShow)
-    s5:Slider("fabSize", "Size", 34, 84, D.fabSize, 0, " px")
-    s5:Slider("fabIdle", "Idle opacity", 0.15, 1, D.fabIdle, 2)
-    s5:Toggle("fabSnap", "Snap to screen edge", D.fabSnap)
-    s5:Toggle("fabLock", "Lock position", D.fabLock)
-    s5:Toggle("fabPulse", "Pulse ring", D.fabPulse)
-    s5:Button("Reset button position", function()
+    local gf = s5:Group("fabShow", "Show round button", D.fabShow)
+    gf:Slider("fabSize", "Size", 34, 84, D.fabSize, 0, " px")
+    gf:Slider("fabIdle", "Idle opacity", 0.15, 1, D.fabIdle, 2)
+    gf:Toggle("fabSnap", "Snap to screen edge", D.fabSnap)
+    gf:Toggle("fabLock", "Lock position", D.fabLock)
+    gf:Toggle("fabPulse", "Pulse ring", D.fabPulse)
+    gf:Button("Reset button position", function()
         cfg.fabX, cfg.fabY = D.fabX, D.fabY
         mark("ui"); UI.applyAppearance(true)
     end)
@@ -44063,20 +44520,26 @@ do
     s6:Toggle("splash", "Start-up splash", D.splash)
 
     local sh = tThemes:Section("R", "HUD", "ui")
-    sh:Toggle("watermark", "Show HUD", D.watermark)
-    sh:Dropdown("wmPos", "Position", UIX.HUD_POS_LIST, D.wmPos, false)
-    sh:Slider("wmScale", "Size", 0.7, 1.6, D.wmScale, 2, "x")
-    sh:Toggle("wmName", "Name", D.wmName)
-    sh:Toggle("wmFps", "FPS", D.wmFps)
-    sh:Toggle("wmPing", "Ping", D.wmPing)
-    sh:Toggle("wmClock", "Clock", D.wmClock)
-    sh:Toggle("wmUser", "Player name", D.wmUser)
-    sh:Button("Reset position", function() cfg.wmX, cfg.wmY = -1, -1; mark("ui"); UI.applyAppearance(true) end)
-    sh:Label("Off by default. While the menu is open you can drag the HUD anywhere.")
+    local gw = sh:Group("watermark", "Show HUD", D.watermark)
+    gw:Dropdown("wmPos", "Position", UIX.HUD_POS_LIST, D.wmPos, false)
+    gw:Slider("wmScale", "Size", 0.7, 1.6, D.wmScale, 2, "x")
+    gw:Toggle("wmName", "Name", D.wmName)
+    gw:Toggle("wmFps", "FPS", D.wmFps)
+    gw:Toggle("wmPing", "Ping", D.wmPing)
+    gw:Toggle("wmClock", "Clock", D.wmClock)
+    gw:Toggle("wmUser", "Player name", D.wmUser)
+    gw:Button("Reset position", function() cfg.wmX, cfg.wmY = -1, -1; mark("ui"); UI.applyAppearance(true) end)
+    gw:Label("Off by default. While the menu is open you can drag the HUD anywhere.")
 
     local sn = tThemes:Section("R", "Sounds", "ui")
     local sg = sn:Group("sfxOn", "Interface sounds", D.sfxOn)
     sg:Slider("sfxVol", "Volume", 0, 1, D.sfxVol, 2)
+    local toneStamp = 0
+    sg:Slider("sfxTone", "Tone: darker - lighter", 0.7, 1.5, D.sfxTone, 2, "x", function()
+        toneStamp = toneStamp + 1
+        local mine = toneStamp
+        task.delay(0.4, function() if mine == toneStamp then UIX.sfx.preview("on") end end)
+    end)
     sg:Segment("sfxPack", "Style", { "Soft", "Pixel" }, D.sfxPack, function() UIX.sfx.setPack(); UIX.sfx.preview("on") end)
     sg:Toggle("sfxSwitch", "Switches on / off", D.sfxSwitch)
     sg:Toggle("sfxMenu", "Menu open / close", D.sfxMenu)
@@ -44084,7 +44547,7 @@ do
     sg:Button("Play: on", function() UIX.sfx.preview("on") end)
     sg:Button("Play: off", function() UIX.sfx.preview("off") end)
     sg:Button("Play: menu", function() UIX.sfx.preview("menu_open") end)
-    sn:Label("Sounds are generated by the script and saved once in the AfraidSide/sfx folder. They need file support (writefile and getcustomasset).")
+    sg:Label("Sounds are generated by the script and saved once in the AfraidSide/sfx folder. They need file support (writefile and getcustomasset).")
 end
 
 local CFG_DIR = "AfraidSide/configs"
@@ -44545,13 +45008,16 @@ if genv.AS_TEST == true then
 end
 
 UIX.arrange({
-    { key = "game",   title = "Game",      icon = "ic_game",  hue = 8,   items = { "MM2", "Da Hood", "Combat", "Fake visuals", "Movement", "Player", "Misc" } },
-    { key = "esp",    title = "ESP & HUD", icon = "ic_esp",   hue = 212, items = { "ESP", "ESP Look", "Crosshair", "HUD", "Client", "Cursor" } },
-    { key = "char",   title = "Character", icon = "ic_char",  hue = 268, items = { "Avatar", "Accessories", "Cosmetics" } },
-    { key = "fx",     title = "Auras & FX", icon = "ic_wand", hue = 322, items = { "Aura", "Seals", "Trail", "Kill FX" } },
-    { key = "world",  title = "World",     icon = "ic_world", hue = 165, items = { { sub = "Environment" }, "World", "Sky", "Post FX", { sub = "Sky life" }, "Particles", "Constellations" } },
-    { key = "screen", title = "Screen",    icon = "ic_screen", hue = 40,  items = { "Screen", "Filters" } },
-    { key = "set",    title = "Settings",  icon = "ic_settings", hue = 215, sat = 0.35, items = { "Binds", "Optimize", "FFlags", "Themes", "Config" } },
+    { key = "combat",   title = "Combat",   icon = "ic_combat",   hue = 8,   items = { "Combat", "Fake visuals" } },
+    { key = "visuals",  title = "Visuals",  icon = "ic_esp",      hue = 212, items = {
+        { sub = "ESP & HUD" }, "ESP", "Crosshair", "HUD", "Client", "Cursor",
+        { sub = "Character" }, "Avatar", "Accessories", "Cosmetics", "Catalog",
+        { sub = "Auras & FX" }, "Aura", "Seals", "Trail", "Kill FX",
+        { sub = "World" }, "World", "Sky", "Post FX", "Particles", "Constellations",
+        { sub = "Screen" }, "Screen", "Filters" } },
+    { key = "move",     title = "Move",     icon = "ic_movement", hue = 150, items = { "Movement" } },
+    { key = "misc",     title = "Misc",     icon = "ic_sliders",  hue = 38,  items = { { sub = "Games" }, "MM2", "Da Hood", { sub = "Your functions" }, "Player", "Misc" } },
+    { key = "set",      title = "Settings", icon = "ic_settings", hue = 215, sat = 0.35, items = { "Binds", "Optimize", "FFlags", "Themes", "Config" } },
 })
 CFGC.setBase(cfg)
 do
