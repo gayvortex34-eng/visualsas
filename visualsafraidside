@@ -223,6 +223,7 @@ local D = {
     aimOn = false, aimMode = "Hold", aimKey = "E", aimRmb = true, aimMethod = "Camera", aimPart = "Head", aimFov = 120, aimFrom = "Auto", aimSmooth = 0.35, aimMaxSpeed = 900,
     aimPredict = 0, aimShake = 0, aimYOff = 0, aimDelay = 0, aimVisible = true, aimTeam = true, aimFF = true, aimLock = true,
     aimShowFov = true, aimFovH = 275, aimFovThick = 1.5, aimFovFill = 0, aimLine = false, aimInfo = true,
+    bdcOn = false, bdcTrigger = "Skill keys", bdcSkills = { ["1"] = true, ["2"] = false, ["3"] = false, ["4"] = false }, bdcDir = "Back (S)", bdcDash = "Q", bdcDelay = 70, bdcHold = 40, bdcCd = 450, bdcMethod = "Auto", bdcKey = "None",
     tgtFilters = { Players = true, NPCs = false }, tgtRange = 600, tgtSort = "Closest",
     fvOn = false, fvMode = "Far", fvFar = 50000, fvAlt = 3000, fvDrift = true, fvRoamSpeed = 90, fvRoamAlt = 120, fvBait = true, fvHide = true, fvBail = 0.25,
     fvStrikeKey = "R", fvStrikePick = "Nearest", fvStrikeRange = 300, fvStrikeTime = 0.6, fvStrikeCd = 1.2, fvStrikeDist = 4, fvStrikeAuto = true,
@@ -18719,6 +18720,7 @@ end
 function UIX.selectTab(t, instant)
     if UIX.closeDD then UIX.closeDD() end
     local old = currentTab
+    if old ~= t and UIX.fly then UIX.fly.close(instant) end
     currentTab = t
     local g = t.group and groups[t.group] or nil
     if g and not g.open then openOnly(g, instant) end
@@ -18997,6 +18999,7 @@ function UIX.layout(snap)
     for _, t in ipairs(tabs) do t:setCompact(compact) end
     clampOff()
     if not UIX.animating then shell.Position = basePos() end
+    if UIX.fly then UIX.fly.reposition() end
 end
 
 local winDrag
@@ -19316,8 +19319,9 @@ local function openDD(anchor, options, multi, getVal, pick)
     local y = ap.Y + asz.Y + 4
     if y + h * sc > root.AbsoluteSize.Y - 6 then y = math.max(4, ap.Y - h * sc - 4) end
     local width = math.max(asz.X / sc, 176)
+    local px = math.max(4, math.min(ap.X, root.AbsoluteSize.X - width * sc - 6))
     local box = new("Frame", {
-        Position = UDim2.fromOffset(ap.X, y), Size = UDim2.fromOffset(width, 0), BackgroundColor3 = T.panel, BackgroundTransparency = 0.02, BorderSizePixel = 0,
+        Position = UDim2.fromOffset(px, y), Size = UDim2.fromOffset(width, 0), BackgroundColor3 = T.panel, BackgroundTransparency = 0.02, BorderSizePixel = 0,
         ClipsDescendants = true, ZIndex = 51,
     }, catcher)
     new("UIScale", { Scale = sc }, box)
@@ -19695,6 +19699,7 @@ function Sec:Toggle(key, text, default, onChange)
     function ctl:Set(v, silent)
         cfg[key] = v and true or false
         render()
+        if ctl.onSet then pcall(ctl.onSet, cfg[key]) end
         if not silent then
             mark(grp)
             UIX.snd("switch", cfg[key])
@@ -19735,52 +19740,6 @@ function Sec:Toggle(key, text, default, onChange)
     ctl.paintBind()
     UIX.indexCtl(self, text, f)
     return ctl
-end
-
-function Sec:Group(key, text, default, onChange, startOpen)
-    local ctl = self:Toggle(key, text, default, onChange)
-    local more = new("TextButton", { Text = "", BackgroundTransparency = 1, AutoButtonColor = false, Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, -78, 0, 3), BorderSizePixel = 0 }, ctl.frame)
-    ctl.chipRight = 82
-    ctl.paintBind()
-    local chev = chevron(more, "dim", 12)
-    chev.Position = UDim2.fromScale(0.5, 0.5)
-    self.n = self.n + 1
-    local holder = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true, LayoutOrder = self.n, BorderSizePixel = 0 }, self.body)
-    vlist(holder, 0)
-    local inner = new("Frame", { BackgroundTransparency = 0.5, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel = 0 }, holder)
-    bindTheme(inner, "BackgroundColor3", "panel2")
-    corner(inner, 8)
-    bindTheme(stroke(inner, T.line, 1, 0.3), "Color", "line")
-    vlist(inner, 3); pad(inner, 6, 6, 6, 6)
-    local open, busy = false, 0
-    local function targetH() return math.floor(inner.AbsoluteSize.Y / curScale() + 0.5) + 4 end
-    local function setOpen(v)
-        if open == v then return end
-        open = v
-        busy = busy + 1
-        local my = busy
-        tw(chev, TI.back, { Rotation = open and 180 or 0 })
-        holder.AutomaticSize = Enum.AutomaticSize.None
-        if open then
-            tw(holder, TI.med, { Size = UDim2.new(1, 0, 0, targetH()) })
-            task.delay(0.26, function()
-                if busy == my and open then holder.AutomaticSize = Enum.AutomaticSize.Y; holder.Size = UDim2.new(1, 0, 0, 0) end
-            end)
-        else
-            holder.Size = UDim2.new(1, 0, 0, targetH())
-            tw(holder, TI.med, { Size = UDim2.new(1, 0, 0, 0) })
-        end
-    end
-    more.Activated:Connect(function() setOpen(not open) end)
-    if startOpen then
-        open = true
-        chev.Rotation = 180
-        holder.AutomaticSize = Enum.AutomaticSize.Y
-    end
-    local parentReveal = self.reveal
-    local sub = setmetatable({ body = inner, grp = self.grp, n = 0, tab = self.tab, title = self.title,
-        reveal = function() if parentReveal then parentReveal() end; setOpen(true) end }, Sec)
-    return sub, ctl
 end
 
 function Sec:Slider(key, text, min, max, default, dec, suffix, onChange)
@@ -20479,6 +20438,426 @@ end
 function UIX.inkBusy() return run ~= nil end
 end
 do
+local C, F, XL, XR, XC = UIX.C, UIX.F, UIX.XL, UIX.XR, UIX.XC
+local TI, tw, new, corner, stroke, pad, vlist = UIX.TI, UIX.tw, UIX.new, UIX.corner, UIX.stroke, UIX.pad, UIX.vlist
+local T, bindTheme, reg, label, icon, chevron = UIX.T, UIX.bindTheme, UIX.reg, UIX.label, UIX.icon, UIX.chevron
+local isPress, curScale, shell = UIX.isPress, UIX.curScale, UIX.shell
+local Sec = UIX.Sec
+
+local FW, GAP, HDR = 292, 10, 56
+local fly = { cur = nil, token = 0, btnOpen = false, side = "right" }
+UIX.fly = fly
+
+local stash = new("Frame", { Name = "flyStash", Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Visible = false, BorderSizePixel = 0 }, shell)
+
+local holder = new("Frame", { Name = "fly", Size = UDim2.fromOffset(FW, 240), Position = UDim2.fromOffset(0, 8), BackgroundTransparency = 1, BorderSizePixel = 0,
+    Visible = false, ZIndex = 30 }, shell)
+local glow = new("ImageLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.52), Size = UDim2.new(1, 70, 1, 70), BackgroundTransparency = 1,
+    Image = "", ImageTransparency = 1, ScaleType = Enum.ScaleType.Stretch, ZIndex = 29, BorderSizePixel = 0 }, holder)
+bindTheme(glow, "ImageColor3", "shadow")
+Assets.watchTex(glow, "glow")
+
+local box, isCanvas
+do
+    local ok, g = pcall(function()
+        return new("CanvasGroup", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.panel, BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 30 }, holder)
+    end)
+    if ok and g then
+        box, isCanvas = g, true
+    else
+        box = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.panel, BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 30 }, holder)
+        isCanvas = false
+    end
+end
+bindTheme(box, "BackgroundColor3", "panel")
+corner(box, 12)
+bindTheme(stroke(box, T.line, 1, 0), "Color", "line")
+if isCanvas then UIX.glassUse("sec", box, 0) end
+fly.holder, fly.box = holder, box
+
+local head = new("Frame", { Size = UDim2.new(1, 0, 0, HDR), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 31 }, box)
+local title = label(head, "", 14, "text", F.bold, XL)
+title.Position = UDim2.fromOffset(14, 10); title.Size = UDim2.fromOffset(FW - 14 - 96, 18); title.ZIndex = 32; title.TextTruncate = Enum.TextTruncate.AtEnd
+local sub = label(head, "", 10, "dim", F.reg, XL)
+sub.Position = UDim2.fromOffset(14, 30); sub.Size = UDim2.fromOffset(FW - 14 - 96, 14); sub.ZIndex = 32; sub.TextTruncate = Enum.TextTruncate.AtEnd
+bindTheme(new("Frame", { Position = UDim2.fromOffset(0, HDR - 1), Size = UDim2.new(1, 0, 0, 1), BorderSizePixel = 0, ZIndex = 32 }, head), "BackgroundColor3", "line")
+
+local swBtn = new("TextButton", { Size = UDim2.fromOffset(34, 18), Position = UDim2.fromOffset(FW - 34 - 44, 19), Text = "", AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 32 }, head)
+corner(swBtn, 9); bindTheme(swBtn, "BackgroundColor3", "off")
+local swFill = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 33 }, swBtn)
+corner(swFill, 9); bindTheme(swFill, "BackgroundColor3", "acc")
+local swKnob = new("Frame", { Size = UDim2.fromOffset(12, 12), Position = UDim2.fromOffset(3, 3), BorderSizePixel = 0, ZIndex = 34, BackgroundColor3 = T.dim }, swBtn)
+corner(swKnob, 6)
+
+local closeBtn = new("TextButton", { Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(FW - 38, 15), BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+    BorderSizePixel = 0, ZIndex = 32 }, head)
+corner(closeBtn, 8); bindTheme(closeBtn, "BackgroundColor3", "panel2")
+local closeIc = icon(closeBtn, "ic_close", 11, "dim")
+closeIc.AnchorPoint = Vector2.new(0.5, 0.5); closeIc.Position = UDim2.fromScale(0.5, 0.5); closeIc.ZIndex = 34
+closeBtn.MouseEnter:Connect(function() tw(closeBtn, TI.fast, { BackgroundTransparency = 0.2 }) end)
+closeBtn.MouseLeave:Connect(function() tw(closeBtn, TI.fast, { BackgroundTransparency = 1 }) end)
+
+local function paintSwitch(snap)
+    local g = fly.cur
+    local on = g ~= nil and cfg[g.ctl.key] == true
+    local fp = { BackgroundTransparency = on and 0 or 1 }
+    local kp = { Position = UDim2.fromOffset(on and 19 or 3, 3), BackgroundColor3 = on and T.onacc or T.dim }
+    if snap then
+        for k, v in pairs(fp) do swFill[k] = v end
+        for k, v in pairs(kp) do swKnob[k] = v end
+    else
+        tw(swFill, TI.med, fp)
+        tw(swKnob, TI.back, kp)
+    end
+end
+reg(function() paintSwitch(true) end)
+swBtn.Activated:Connect(function()
+    local g = fly.cur
+    if g then g.ctl:Set(not (cfg[g.ctl.key] == true)) end
+end)
+
+local scroll = new("ScrollingFrame", { Position = UDim2.fromOffset(0, HDR), Size = UDim2.new(1, 0, 1, -HDR), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+    ScrollBarImageTransparency = 0.45, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 31 }, box)
+bindTheme(scroll, "ScrollBarImageColor3", "acc")
+local list = vlist(scroll, 8)
+pad(scroll, 10, 10, 10, 12)
+local CW = FW - 20
+
+local function card(order, h)
+    local c = new("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 0.5, BorderSizePixel = 0, LayoutOrder = order, ClipsDescendants = true, ZIndex = 32 }, scroll)
+    bindTheme(c, "BackgroundColor3", "panel2")
+    corner(c, 8)
+    bindTheme(stroke(c, T.line, 1, 0.3), "Color", "line")
+    return c
+end
+
+local function txt(parent, text, size, font, key, x, y, w, h, xa)
+    local l = label(parent, text, size, key, font, xa or XL)
+    l.Position = UDim2.fromOffset(x, y); l.Size = UDim2.fromOffset(w, h); l.ZIndex = 33; l.TextTruncate = Enum.TextTruncate.AtEnd
+    return l
+end
+
+local function bindOf(key)
+    local b = cfg.binds and cfg.binds[key]
+    if type(b) == "table" and b.k then return b end
+    return nil
+end
+local bindCard = card(1, 100)
+local capturing, pendingMode = false, "Toggle"
+txt(bindCard, "Key", 12, F.med, "text", 10, 8, 60, 26)
+local kb = new("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 8), Size = UDim2.fromOffset(124, 26), Text = "", AutoButtonColor = false,
+    BorderSizePixel = 0, ZIndex = 33 }, bindCard)
+corner(kb, 7); bindTheme(kb, "BackgroundColor3", "off")
+local kst = stroke(kb, T.line, 1, 0)
+local kl = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Font = F.bold, TextSize = 12, TextColor3 = T.text, ZIndex = 34, BorderSizePixel = 0, Text = "" }, kb)
+txt(bindCard, "Mode", 12, F.med, "text", 10, 40, 60, 26)
+local seg = new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 40), Size = UDim2.fromOffset(124, 26), BorderSizePixel = 0, ZIndex = 33, ClipsDescendants = true }, bindCard)
+corner(seg, 7); bindTheme(seg, "BackgroundColor3", "off")
+local hl = new("Frame", { Size = UDim2.new(0.5, -4, 1, -4), Position = UDim2.fromOffset(2, 2), BorderSizePixel = 0, ZIndex = 34 }, seg)
+corner(hl, 5); bindTheme(hl, "BackgroundColor3", "acc")
+local modeBtns = {}
+for i, m in ipairs({ "Toggle", "Hold" }) do
+    local mb = new("TextButton", { Size = UDim2.new(0.5, 0, 1, 0), Position = UDim2.new((i - 1) * 0.5, 0, 0, 0), BackgroundTransparency = 1, Text = m, TextSize = 11, Font = F.bold,
+        TextColor3 = T.dim, AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 35 }, seg)
+    modeBtns[i] = mb
+    mb.Activated:Connect(function()
+        local g = fly.cur
+        if not g then return end
+        local b = bindOf(g.ctl.key)
+        if b then b.m = m else pendingMode = m end
+        fly.paintBind()
+        UIX.refreshBinds()
+    end)
+end
+local hint = txt(bindCard, "Click the key, then press one. Esc cancels, Backspace clears.", 10, F.reg, "dim", 10, 72, CW - 80, 22)
+hint.TextWrapped = true; hint.TextTruncate = Enum.TextTruncate.None; hint.TextYAlignment = Enum.TextYAlignment.Top
+local clr = new("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 72), Size = UDim2.fromOffset(52, 20), Text = "Clear", TextSize = 11, Font = F.bold,
+    AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 33 }, bindCard)
+corner(clr, 6); bindTheme(clr, "BackgroundColor3", "off"); bindTheme(clr, "TextColor3", "dim")
+
+function fly.paintBind()
+    local g = fly.cur
+    if not g then return end
+    local b = bindOf(g.ctl.key)
+    kl.Text = capturing and "press a key..." or (b and UIX.keyLabel(b.k) or "None")
+    kl.TextColor3 = (capturing or b) and T.text or T.dim
+    tw(kst, TI.fast, { Color = capturing and T.acc or T.line })
+    local m = b and b.m or pendingMode
+    local idx = (m == "Hold") and 2 or 1
+    tw(hl, TI.back, { Position = UDim2.new((idx - 1) * 0.5, 2, 0, 2) })
+    for i, mb in ipairs(modeBtns) do tw(mb, TI.fast, { TextColor3 = (i == idx) and T.onacc or T.dim }) end
+end
+reg(function() fly.paintBind() end)
+
+local function cancelCapture()
+    if capturing then
+        capturing = false
+        UIX.listening = nil
+    end
+end
+
+kb.Activated:Connect(function()
+    local g = fly.cur
+    if not g then return end
+    capturing = true
+    fly.paintBind()
+    UIX.listening = function(name)
+        capturing = false
+        local cg = fly.cur
+        if cg and name ~= nil then
+            if type(cfg.binds) ~= "table" then cfg.binds = {} end
+            local key = cg.ctl.key
+            if name == "Backspace" or name == "Delete" then
+                cfg.binds[key] = nil
+            elseif name == cfg.menuKey then
+                notify("That key opens the menu - pick another one", 2.5)
+            else
+                local old = bindOf(key)
+                cfg.binds[key] = { k = name, m = old and old.m or pendingMode }
+                UIX.snd("bind")
+            end
+            UIX.refreshBinds()
+        end
+        fly.paintBind()
+    end
+end)
+clr.Activated:Connect(function()
+    local g = fly.cur
+    if not g then return end
+    cancelCapture()
+    if type(cfg.binds) == "table" then cfg.binds[g.ctl.key] = nil end
+    UIX.refreshBinds()
+    fly.paintBind()
+end)
+
+local baseRefresh = UIX.refreshBinds
+function UIX.refreshBinds()
+    baseRefresh()
+    if fly.cur then pcall(fly.paintBind) end
+end
+
+local sbCard = card(2, 34)
+local sbHead = new("TextButton", { Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, BorderSizePixel = 0, ZIndex = 33 }, sbCard)
+txt(sbHead, "Screen button", 12, F.med, "text", 10, 0, 140, 34)
+local sbState = txt(sbHead, "Off", 11, F.bold, "dim", CW - 70, 0, 40, 34, XR)
+local sbChev = chevron(sbHead, "dim", 11)
+sbChev.Position = UDim2.new(1, -16, 0.5, 0); sbChev.ZIndex = 34; sbChev.Rotation = -90
+local sbHost = new("Frame", { Position = UDim2.fromOffset(10, 38), Size = UDim2.fromOffset(CW - 20, 10), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 33, Visible = false }, sbCard)
+local sbPane
+local function sbSize(h)
+    sbHost.Size = UDim2.fromOffset(CW - 20, h)
+    sbCard.Size = UDim2.new(1, 0, 0, fly.btnOpen and (38 + h + 10) or 34)
+end
+local function sbPaintState()
+    local g = fly.cur
+    local on = g ~= nil and UIX.BTN ~= nil and UIX.BTN.has(g.ctl.key)
+    sbState.Text = on and "On" or "Off"
+    sbState.TextColor3 = on and T.text or T.dim
+end
+local function sbBuild()
+    if sbPane then pcall(function() sbPane:Destroy() end); sbPane = nil end
+    local g = fly.cur
+    if not (g and UIX.btnPane and fly.btnOpen) then
+        sbHost.Visible = false
+        sbCard.Size = UDim2.new(1, 0, 0, 34)
+        return
+    end
+    sbHost.Visible = true
+    local pane = UIX.btnPane(sbHost, g.ctl, CW - 20, 34, function(h) sbSize(h); sbPaintState() end)
+    sbPane = pane
+end
+sbHead.Activated:Connect(function()
+    fly.btnOpen = not fly.btnOpen
+    tw(sbChev, TI.back, { Rotation = fly.btnOpen and 0 or -90 })
+    sbBuild()
+end)
+sbHead.MouseEnter:Connect(function() tw(sbCard, TI.fast, { BackgroundTransparency = 0.35 }) end)
+sbHead.MouseLeave:Connect(function() tw(sbCard, TI.fast, { BackgroundTransparency = 0.5 }) end)
+
+local capF = new("Frame", { Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 3, ZIndex = 32 }, scroll)
+local capL = txt(capF, "Settings", 11, F.med, "dim", 4, 2, 120, 16)
+local capLine = new("Frame", { Position = UDim2.fromOffset(62, 10), Size = UDim2.new(1, -66, 0, 1), BorderSizePixel = 0, ZIndex = 32 }, capF)
+bindTheme(capLine, "BackgroundColor3", "line")
+
+local function maxHeight()
+    local dh = shell.Size.Y.Offset
+    if fly.side == "over" then return math.max(160, dh - 64) end
+    return math.max(160, dh - 16)
+end
+
+local function contentHeight()
+    local ok, h = pcall(function() return list.AbsoluteContentSize.Y end)
+    h = ok and tonumber(h) or 0
+    if h <= 0 then return 260 end
+    return h / math.max(curScale(), 0.01)
+end
+
+function fly.resize(snap)
+    if not fly.cur then return end
+    local h = math.floor(clamp(HDR + 22 + contentHeight(), 170, maxHeight()) + 0.5)
+    local sz = UDim2.fromOffset(FW, h)
+    if snap then holder.Size = sz else tw(holder, TI.fast, { Size = sz }) end
+end
+list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() fly.resize(false) end)
+
+local function sideFor()
+    local ap, asz = shell.AbsolutePosition, shell.AbsoluteSize
+    if asz.X < 1 then return "right" end
+    local vp = UIX.viewport()
+    local need = (FW + GAP) * curScale()
+    if vp.X - (ap.X + asz.X) >= need then return "right" end
+    if ap.X >= need then return "left" end
+    return "over"
+end
+
+local function target()
+    local dw = shell.Size.X.Offset
+    if fly.side == "right" then return UDim2.fromOffset(dw + GAP, 8)
+    elseif fly.side == "left" then return UDim2.fromOffset(-(FW + GAP), 8) end
+    return UDim2.fromOffset(dw - FW - 12, 52)
+end
+
+function fly.reposition()
+    if not fly.cur then return end
+    fly.side = sideFor()
+    holder.Position = target()
+    holder.ZIndex = fly.side == "over" and 45 or 30
+    fly.resize(true)
+end
+
+local function headTexts(g)
+    local t = g.ctl.text or g.ctl.key
+    local low = string.lower(tostring(t))
+    if (low == "enabled" or low == "enable" or low == "on" or low == "active") and g.secTitle and g.secTitle ~= "" then t = g.secTitle end
+    title.Text = t
+    sub.Text = g.ctl.where or ""
+end
+
+local function attach(g)
+    g.inner.Parent = scroll
+    g.inner.LayoutOrder = 4
+end
+local function detach(g)
+    pcall(function() g.inner.Parent = stash end)
+end
+
+function fly.open(g)
+    if not shell.Visible then return end
+    if fly.cur == g then return end
+    local first = fly.cur == nil
+    if fly.cur then
+        local old = fly.cur
+        fly.cur = nil
+        cancelCapture()
+        detach(old)
+        old.paintOpen(false)
+        if old.ctl.onSet == old.mirror then old.ctl.onSet = old.prevOnSet end
+    end
+    fly.cur = g
+    pendingMode = "Toggle"
+    headTexts(g)
+    attach(g)
+    g.prevOnSet = g.ctl.onSet
+    g.mirror = function(v)
+        if g.prevOnSet then g.prevOnSet(v) end
+        if fly.cur == g then paintSwitch(false) end
+    end
+    g.ctl.onSet = g.mirror
+    paintSwitch(true)
+    fly.paintBind()
+    sbPaintState()
+    sbBuild()
+    scroll.CanvasPosition = Vector2.new(0, 0)
+    fly.reposition()
+    g.paintOpen(true)
+    fly.token = fly.token + 1
+    if first then
+        holder.Visible = true
+        local to = target()
+        local from = UDim2.fromOffset(to.X.Offset + (fly.side == "left" and 18 or -18), to.Y.Offset)
+        holder.Position = from
+        pcall(function() box.GroupTransparency = 1 end)
+        tw(holder, TI.med, { Position = to })
+        if isCanvas then tw(box, TI.med, { GroupTransparency = 0 }) else box.BackgroundTransparency = 0 end
+        tw(glow, TI.med, { ImageTransparency = 0.55 })
+    end
+    UIX.snd("menu_open")
+end
+
+function fly.close(snap)
+    local g = fly.cur
+    if not g then return end
+    fly.cur = nil
+    cancelCapture()
+    detach(g)
+    g.paintOpen(false, snap)
+    if g.ctl.onSet == g.mirror then g.ctl.onSet = g.prevOnSet end
+    if sbPane then pcall(function() sbPane:Destroy() end); sbPane = nil end
+    fly.token = fly.token + 1
+    local my = fly.token
+    if snap then
+        holder.Visible = false
+        pcall(function() box.GroupTransparency = 1 end)
+        glow.ImageTransparency = 1
+        return
+    end
+    local to = target()
+    tw(holder, TI.fast, { Position = UDim2.fromOffset(to.X.Offset + (fly.side == "left" and 14 or -14), to.Y.Offset) })
+    if isCanvas then tw(box, TI.fast, { GroupTransparency = 1 }) end
+    tw(glow, TI.fast, { ImageTransparency = 1 })
+    task.delay(0.2, function()
+        if fly.token == my and not fly.cur then pcall(function() holder.Visible = false end) end
+    end)
+end
+
+function fly.toggle(g)
+    if fly.cur == g then fly.close() else fly.open(g) end
+end
+
+closeBtn.Activated:Connect(function() fly.close() end)
+
+function Sec:Group(key, text, default, onChange)
+    local ctl = self:Toggle(key, text, default, onChange)
+    local more = new("TextButton", { Text = "", BackgroundTransparency = 1, AutoButtonColor = false, Size = UDim2.fromOffset(30, 26), Position = UDim2.new(1, -80, 0, 3),
+        BorderSizePixel = 0 }, ctl.frame)
+    ctl.chipRight = 84
+    ctl.paintBind()
+    local pill = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0 }, more)
+    corner(pill, 7); bindTheme(pill, "BackgroundColor3", "acc")
+    local chev = chevron(more, "dim", 12)
+    chev.Position = UDim2.fromScale(0.5, 0.5)
+    chev.Rotation = -90
+    local bar = new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.fromOffset(2, 16), BackgroundTransparency = 1, BorderSizePixel = 0 }, ctl.frame)
+    corner(bar, 1); bindTheme(bar, "BackgroundColor3", "acc")
+    local inner = new("Frame", { Name = "opts_" .. key, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 32 }, stash)
+    vlist(inner, 3)
+    local g = { key = key, ctl = ctl, inner = inner, more = more, secTitle = self.title }
+    function g.paintOpen(on, snap)
+        local pp, bp = { BackgroundTransparency = on and 0.84 or 1 }, { BackgroundTransparency = on and 0 or 1 }
+        if snap then
+            pill.BackgroundTransparency = pp.BackgroundTransparency
+            bar.BackgroundTransparency = bp.BackgroundTransparency
+            chev.Rotation = on and 90 or -90
+        else
+            tw(pill, TI.med, pp)
+            tw(bar, TI.med, bp)
+            tw(chev, TI.back, { Rotation = on and 90 or -90 })
+        end
+    end
+    ctl.more, ctl.flyG = more, g
+    more.Activated:Connect(function() fly.toggle(g) end)
+    more.MouseEnter:Connect(function() if fly.cur ~= g then tw(pill, TI.fast, { BackgroundTransparency = 0.9 }) end end)
+    more.MouseLeave:Connect(function() if fly.cur ~= g then tw(pill, TI.fast, { BackgroundTransparency = 1 }) end end)
+    local parentReveal = self.reveal
+    local sub_ = setmetatable({ body = inner, grp = self.grp, n = 0, tab = self.tab, title = self.title,
+        reveal = function()
+            if parentReveal then parentReveal() end
+            fly.open(g)
+        end }, Sec)
+    return sub_, ctl
+end
+end
+do
 
 local C, F, XL, XR, XC = UIX.C, UIX.F, UIX.XL, UIX.XR, UIX.XC
 local TI, tw, new, corner, stroke, pad, vlist, WHITE = UIX.TI, UIX.tw, UIX.new, UIX.corner, UIX.stroke, UIX.pad, UIX.vlist, UIX.WHITE
@@ -20944,6 +21323,7 @@ function UI.toggle(v)
     local my = toggleToken
     UIX.closeDD()
     if not v and UIX.closeSearch then UIX.closeSearch() end
+    if not v and UIX.fly then UIX.fly.close(true) end
     fabOpenVisual(v)
     if v == was and shell.Visible == v then return end
     UIX.snd("menu", v)
@@ -21264,16 +21644,42 @@ end
 function BTN.has(key) return specOf(key) ~= nil end
 function BTN.spec(key) return specOf(key) end
 
+local SIZE_MIN, SIZE_MAX = 30, 120
+BTN.SIZES = { { "S", 40 }, { "M", 56 }, { "L", 76 }, { "XL", 100 } }
+
 local function fixSpec(sp)
-    sp.s = clamp(tonumber(sp.s) or 56, 34, 96)
-    sp.x = clamp(tonumber(sp.x) or 0.9, 0.03, 0.97)
-    sp.y = clamp(tonumber(sp.y) or 0.5, 0.05, 0.95)
+    sp.s = clamp(tonumber(sp.s) or 56, SIZE_MIN, SIZE_MAX)
+    sp.x = clamp(tonumber(sp.x) or 0.9, 0, 1)
+    sp.y = clamp(tonumber(sp.y) or 0.5, 0, 1)
+    sp.lk = sp.lk == true
     sp.o = clamp(tonumber(sp.o) or 1, 0.25, 1)
     if sp.m ~= "Hold" then sp.m = "Toggle" end
     if type(sp.t) ~= "string" or sp.t == "" then sp.t = nil end
 end
 
 local function menuOpen() return UI.isOpen and UI.isOpen() == true end
+
+local function lockGlyph(parent, px, col, z)
+    local u = px / 14
+    local function n(v) return math.max(1, math.floor(v * u + 0.5)) end
+    local h = new("Frame", { Size = UDim2.fromOffset(px, px), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = z or 1 }, parent)
+    local sh = new("Frame", { Size = UDim2.fromOffset(n(6), n(7)), Position = UDim2.fromOffset(n(4), n(1)), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = z or 1 }, h)
+    corner(sh, UDim.new(0.5, 0))
+    local shs = stroke(sh, col, math.max(1, 1.6 * u), 0)
+    local body = new("Frame", { Size = UDim2.fromOffset(n(10), n(7)), Position = UDim2.fromOffset(n(2), n(7)), BackgroundColor3 = col, BorderSizePixel = 0, ZIndex = (z or 1) + 1 }, h)
+    corner(body, n(2))
+    local g = { frame = h }
+    function g.set(locked)
+        sh.Position = locked and UDim2.fromOffset(n(4), n(1)) or UDim2.fromOffset(n(7), 0)
+    end
+    function g.tint(c)
+        body.BackgroundColor3 = c
+        shs.Color = c
+    end
+    g.set(true)
+    return g
+end
+UIX.lockGlyph = lockGlyph
 
 local function litOf(tg, r)
     if r.held then return true end
@@ -21292,18 +21698,33 @@ local function paint(key, force)
     if not (r and sp and tg and alive(r.b)) then return end
     local on = litOf(tg, r)
     local sel = BTN.editKey == key
-    local sig = table.concat({ on and 1 or 0, sel and "s" or (BTN.editKey and "e" or "n"), sp.o, T.name or "" }, "|")
+    local sig = table.concat({ on and 1 or 0, sel and "s" or (BTN.editKey and "e" or "n"), sp.o, T.name or "", sp.lk and "L" or "U" }, "|")
     if not force and r.sig == sig then return end
     r.sig = sig
+    if r.bd then
+        r.bd.Visible = BTN.editKey ~= nil
+        r.bdg.set(sp.lk)
+        r.bdg.tint(sp.lk and T.onacc or T.dim)
+        r.bd.BackgroundColor3 = sp.lk and T.acc or T.panel
+    end
     tw(r.b, TI.fast, { BackgroundColor3 = on and T.acc or T.panel, BackgroundTransparency = on and (1 - 0.98 * sp.o) or (1 - 0.94 * sp.o) })
     tw(r.lb, TI.fast, { TextColor3 = on and T.onacc or T.text, TextTransparency = 1 - sp.o * 0.5 - 0.5 })
     tw(r.st, TI.fast, { Color = (sel or on) and T.acc or T.dim, Thickness = sel and 3 or 1.5, Transparency = sel and 0 or (1 - sp.o * 0.85) })
+end
+
+local function keepOnScreen(sp)
+    local vp = viewport()
+    local lx = math.min((sp.s / 2 + 4) / math.max(vp.X, 1), 0.45)
+    local ly = math.min((sp.s / 2 + 4) / math.max(vp.Y, 1), 0.45)
+    sp.x = clamp(sp.x, lx, 1 - lx)
+    sp.y = clamp(sp.y, ly, 1 - ly)
 end
 
 local function place(key)
     local r, sp, tg = BTN.frames[key], specOf(key), targetOf(key)
     if not (r and sp and tg and alive(r.b)) then return end
     fixSpec(sp)
+    keepOnScreen(sp)
     r.b.Size = UDim2.fromOffset(sp.s, sp.s)
     r.b.Position = UDim2.fromScale(sp.x, sp.y)
     r.cr.CornerRadius = UDim.new(0, math.floor(sp.s * 0.28))
@@ -21365,7 +21786,13 @@ local function build(key)
     local sc = new("UIScale", { Scale = 1 }, b)
     local lb = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), Font = F.bold, TextSize = 12, TextWrapped = true,
         TextColor3 = T.text, TextTruncate = Enum.TextTruncate.AtEnd, BorderSizePixel = 0, ZIndex = 3, Text = "" }, b)
-    r = { b = b, cr = cr, st = st, sc = sc, lb = lb, held = false }
+    local bd = new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 3, 0, -3), Size = UDim2.fromOffset(18, 18), BackgroundColor3 = T.panel, BorderSizePixel = 0,
+        ZIndex = 5, Visible = false, Active = false }, b)
+    corner(bd, 9)
+    local bds = stroke(bd, T.dim, 1, 0.2)
+    local bdg = lockGlyph(bd, 12, T.dim, 6)
+    bdg.frame.Position = UDim2.fromOffset(3, 3)
+    r = { b = b, cr = cr, st = st, sc = sc, lb = lb, held = false, bd = bd, bds = bds, bdg = bdg }
     BTN.frames[key] = r
     b.InputBegan:Connect(function(i)
         if not isPress(i) then return end
@@ -21373,9 +21800,22 @@ local function build(key)
         if not sp then return end
         if BTN.editKey then
             BTN.select(key)
-            dragR = { key = key, start = i.Position, x0 = sp.x, y0 = sp.y, moved = false, input = i }
+            if not sp.lk then
+                dragR = { key = key, start = i.Position, x0 = sp.x, y0 = sp.y, moved = false, input = i }
+            end
         elseif not menuOpen() then
-            press(key, i)
+            local tg = targetOf(key)
+            if sp.lk or not tg then
+                press(key, i)
+                return
+            end
+            local imm = (tg.kind == "action" and tg.hold ~= nil) or (tg.kind ~= "action" and sp.m == "Hold")
+            dragR = { key = key, start = i.Position, x0 = sp.x, y0 = sp.y, moved = false, input = i, play = true, imm = imm }
+            if imm then
+                press(key, i)
+            else
+                pcall(function() tw(r.sc, TI.fast, { Scale = 0.94 }) end)
+            end
         end
     end)
     return r
@@ -21408,7 +21848,7 @@ function BTN.add(key)
     if specOf(key) then return end
     local n = 0
     for _ in pairs(cfg.btns) do n = n + 1 end
-    cfg.btns[key] = { s = 56, x = 0.9, y = clamp(0.25 + 0.14 * (n % 5), 0.1, 0.9), m = "Toggle", o = 1 }
+    cfg.btns[key] = { s = 56, x = 0.9, y = clamp(0.25 + 0.14 * (n % 5), 0.1, 0.9), m = "Toggle", o = 1, lk = false }
     BTN.sync()
 end
 
@@ -21447,11 +21887,17 @@ local function buildOverlay()
     local minus, plus = mk("-", 28, 2), mk("+", 28, 4)
     local size = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 28), Text = "56", TextSize = 12, Font = F.bold, LayoutOrder = 3, BorderSizePixel = 0, ZIndex = 76 }, f)
     bindTheme(size, "TextColor3", "text")
-    local reset, done = mk("Reset", 54, 5), mk("Done", 56, 6, true)
+    local lock = new("TextButton", { Size = UDim2.fromOffset(84, 28), Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = 5, ZIndex = 76 }, f)
+    corner(lock, 7)
+    local lockG = lockGlyph(lock, 14, T.text, 77)
+    lockG.frame.Position = UDim2.fromOffset(9, 7)
+    local lockT = new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.fromOffset(28, 0), Size = UDim2.new(1, -32, 1, 0), Text = "Lock", TextSize = 12, Font = F.bold,
+        TextXAlignment = XL, BorderSizePixel = 0, ZIndex = 77 }, lock)
+    local reset, done = mk("Reset", 54, 6), mk("Done", 56, 7, true)
     local function bump(d)
         local sp = specOf(BTN.editKey or "")
         if not sp then return end
-        sp.s = clamp(sp.s + d, 34, 96)
+        sp.s = clamp(sp.s + d, SIZE_MIN, SIZE_MAX)
         BTN.update(BTN.editKey)
         size.Text = tostring(sp.s)
     end
@@ -21459,21 +21905,66 @@ local function buildOverlay()
     plus.Activated:Connect(function() bump(4) end)
     reset.Activated:Connect(function()
         local sp = specOf(BTN.editKey or "")
-        if not sp then return end
+        if not sp or sp.lk then return end
         sp.x, sp.y, sp.s = 0.9, 0.5, 56
         BTN.update(BTN.editKey)
         size.Text = "56"
     end)
+    lock.Activated:Connect(function()
+        if BTN.editKey then BTN.setLock(BTN.editKey, not BTN.isLocked(BTN.editKey)) end
+    end)
     done.Activated:Connect(function() BTN.endPlace(true) end)
-    ov = { f = f, size = size, hint = hint }
+    ov = { f = f, size = size, hint = hint, lock = lock, lockG = lockG, lockT = lockT }
     return ov
+end
+
+function BTN.isLocked(key)
+    local sp = specOf(key)
+    return sp ~= nil and sp.lk == true
+end
+
+local function paintOverlay()
+    if not (ov and alive(ov.f)) then return end
+    local sp = specOf(BTN.editKey or "")
+    if not sp then return end
+    ov.size.Text = tostring(sp.s)
+    local lk = sp.lk == true
+    ov.hint.Text = lk and "Locked in place" or "Drag the button"
+    ov.lockT.Text = lk and "Locked" or "Lock"
+    ov.lockG.set(lk)
+    ov.lockG.tint(lk and T.onacc or T.text)
+    ov.lockT.TextColor3 = lk and T.onacc or T.text
+    ov.lock.BackgroundColor3 = lk and T.acc or T.off
+end
+
+function BTN.setLock(key, v)
+    local sp = specOf(key)
+    if not sp then return end
+    sp.lk = v == true
+    dragR = nil
+    local r = BTN.frames[key]
+    if r then pcall(function() tw(r.sc, TI.back, { Scale = 1 }) end) end
+    paint(key, true)
+    paintOverlay()
+    UIX.snd("switch", sp.lk)
+    if UIX.onBtns then pcall(UIX.onBtns) end
+end
+
+function BTN.setLockAll(v)
+    if type(cfg.btns) ~= "table" then return end
+    for k, sp in pairs(cfg.btns) do
+        if type(sp) == "table" then sp.lk = v == true end
+    end
+    dragR = nil
+    for k in pairs(BTN.frames) do paint(k, true) end
+    paintOverlay()
+    if UIX.onBtns then pcall(UIX.onBtns) end
 end
 
 function BTN.select(key)
     BTN.editKey = key
-    local sp = specOf(key)
-    if ov and sp then ov.size.Text = tostring(sp.s) end
     for k in pairs(BTN.frames) do paint(k, true) end
+    paintOverlay()
 end
 
 function BTN.place(key)
@@ -21501,16 +21992,36 @@ bind(UIS.InputChanged, function(i)
     if d.input.UserInputType == Enum.UserInputType.Touch and i ~= d.input then return end
     local sp = specOf(d.key)
     if not sp then dragR = nil; return end
+    if sp.lk then return end
     local dl = i.Position - d.start
-    if not d.moved and dl.Magnitude < 5 then return end
-    d.moved = true
+    if not d.moved then
+        if dl.Magnitude < (d.play and 10 or 5) then return end
+        d.moved = true
+        local r = BTN.frames[d.key]
+        if d.play and r then
+            if r.held then release(d.key) end
+            pcall(function() tw(r.sc, TI.fast, { Scale = 1.1 }) end)
+        end
+    end
     local vp = viewport()
-    sp.x = clamp(d.x0 + dl.X / math.max(vp.X, 1), 0.03, 0.97)
-    sp.y = clamp(d.y0 + dl.Y / math.max(vp.Y, 1), 0.05, 0.95)
+    sp.x = d.x0 + dl.X / math.max(vp.X, 1)
+    sp.y = d.y0 + dl.Y / math.max(vp.Y, 1)
     place(d.key)
 end)
 bind(UIS.InputEnded, function(i)
-    if dragR and (i == dragR.input or (isPress(i) and i.UserInputType == dragR.input.UserInputType)) then dragR = nil end
+    local d = dragR
+    if d and (i == d.input or (isPress(i) and i.UserInputType == d.input.UserInputType)) then
+        dragR = nil
+        if d.play then
+            local r = BTN.frames[d.key]
+            if d.moved then
+                if r then pcall(function() tw(r.sc, TI.back, { Scale = 1 }) end) end
+            elseif not d.imm and r then
+                press(d.key, d.input)
+                release(d.key)
+            end
+        end
+    end
     for key, r in pairs(BTN.frames) do
         if r.input ~= nil and (r.input == i or (isPress(i) and r.input.UserInputType == i.UserInputType and i.UserInputType ~= Enum.UserInputType.Touch)) then release(key) end
     end
@@ -21546,9 +22057,9 @@ function UIX.btnPane(parent, tg, W, z, resize)
     corner(track, 9)
     local knob = new("Frame", { Size = UDim2.fromOffset(12, 12), Position = UDim2.fromOffset(3, 3), BorderSizePixel = 0, ZIndex = z + 2 }, track)
     corner(knob, 6)
-    local hint = new("TextLabel", { BackgroundTransparency = 1, Text = "Adds a button on your screen that switches this function. It is only created when you turn this on.",
+    local hint = new("TextLabel", { BackgroundTransparency = 1, Text = "Adds a button on your screen that switches this function. Drag it to move it, lock it to keep it in place. It is only created when you turn this on.",
         TextSize = 10, Font = F.reg, TextColor3 = T.dim, TextXAlignment = XL, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, Position = UDim2.fromOffset(0, 30),
-        Size = UDim2.fromOffset(W, 40), ZIndex = z + 1, BorderSizePixel = 0 }, pane)
+        Size = UDim2.fromOffset(W, 52), ZIndex = z + 1, BorderSizePixel = 0 }, pane)
 
     local r2 = row(34, 26); live[#live + 1] = r2
     txt(r2, "Label", 0, 60)
@@ -21590,6 +22101,8 @@ function UIX.btnPane(parent, tg, W, z, resize)
         end
         hit.InputBegan:Connect(function(i)
             if isPress(i) then
+                local sc = r:FindFirstAncestorWhichIsA("ScrollingFrame")
+                if sc then sc.ScrollingEnabled = false; UIX.drag.lock = sc end
                 UIX.drag.fn = function(m) fromX(m.Position.X) end
                 fromX(i.Position.X)
             end
@@ -21598,16 +22111,46 @@ function UIX.btnPane(parent, tg, W, z, resize)
         paintS()
     end
 
-    slider(66, "Size", 34, 96, 2, function() local sp = specOf(key); return sp and sp.s or 56 end,
+    slider(66, "Size", SIZE_MIN, SIZE_MAX, 2, function() local sp = specOf(key); return sp and sp.s or 56 end,
         function(v) local sp = specOf(key); if sp then sp.s = v; BTN.update(key) end end, function(v) return v .. " px" end)
-    slider(96, "Opacity", 0.25, 1, 0.05, function() local sp = specOf(key); return sp and sp.o or 1 end,
+
+    local rc = row(94, 24); live[#live + 1] = rc
+    local chips = {}
+    local cw = math.floor((W - 3 * 5) / 4)
+    for ci, sz in ipairs(BTN.SIZES) do
+        local cb = new("TextButton", { Position = UDim2.fromOffset((ci - 1) * (cw + 5), 0), Size = UDim2.fromOffset(cw, 24), Text = sz[1], TextSize = 11, Font = F.bold,
+            AutoButtonColor = false, BorderSizePixel = 0, ZIndex = z + 1 }, rc)
+        corner(cb, 6)
+        chips[ci] = cb
+        cb.Activated:Connect(function()
+            local sp = specOf(key)
+            if sp then sp.s = sz[2]; BTN.update(key) end
+            for _, fn in ipairs(painters) do fn() end
+        end)
+    end
+    painters[#painters + 1] = function()
+        local sp = specOf(key)
+        local cur = sp and sp.s or 56
+        local best, bd = 1, 1e9
+        for ci, sz in ipairs(BTN.SIZES) do
+            local dd = math.abs(sz[2] - cur)
+            if dd < bd then best, bd = ci, dd end
+        end
+        for ci, cb in ipairs(chips) do
+            local on = (ci == best and bd <= 6)
+            cb.BackgroundColor3 = on and T.acc or T.off
+            cb.TextColor3 = on and T.onacc or T.dim
+        end
+    end
+
+    slider(122, "Opacity", 0.25, 1, 0.05, function() local sp = specOf(key); return sp and sp.o or 1 end,
         function(v) local sp = specOf(key); if sp then sp.o = v; BTN.update(key) end end, function(v) return math.floor(v * 100 + 0.5) .. "%" end)
 
     local hasMode = tg.kind ~= "action"
-    local nextY = 126
+    local nextY = 152
     local modeBtns = {}
     if hasMode then
-        local r = row(126, 26); live[#live + 1] = r
+        local r = row(152, 26); live[#live + 1] = r
         txt(r, "Press", 0, 60)
         local seg = new("Frame", { Position = UDim2.fromOffset(W - 128, 1), Size = UDim2.fromOffset(128, 24), BackgroundColor3 = T.off, BorderSizePixel = 0, ZIndex = z + 1, ClipsDescendants = true }, r)
         corner(seg, 7)
@@ -21630,8 +22173,27 @@ function UIX.btnPane(parent, tg, W, z, resize)
         end
         painters[#painters + 1] = paintM
         paintM()
-        nextY = 156
+        nextY = 182
     end
+
+    local rl = row(nextY, 26); live[#live + 1] = rl
+    txt(rl, "Lock position", 0, 130)
+    local ltrack = new("TextButton", { Size = UDim2.fromOffset(34, 18), Position = UDim2.fromOffset(W - 34, 4), Text = "", AutoButtonColor = false, BorderSizePixel = 0, ZIndex = z + 1 }, rl)
+    corner(ltrack, 9)
+    local lknob = new("Frame", { Size = UDim2.fromOffset(12, 12), Position = UDim2.fromOffset(3, 3), BorderSizePixel = 0, ZIndex = z + 2 }, ltrack)
+    corner(lknob, 6)
+    local function paintL()
+        local lk = BTN.isLocked(key)
+        ltrack.BackgroundColor3 = lk and T.acc or T.off
+        tw(lknob, TI.back, { Position = UDim2.fromOffset(lk and 19 or 3, 3), BackgroundColor3 = lk and T.onacc or T.dim })
+    end
+    ltrack.Activated:Connect(function()
+        BTN.setLock(key, not BTN.isLocked(key))
+        paintL()
+    end)
+    painters[#painters + 1] = paintL
+    paintL()
+    nextY = nextY + 30
 
     local rp = row(nextY, 28); live[#live + 1] = rp
     local pb = new("TextButton", { Size = UDim2.fromOffset(W, 28), Text = "Place on screen", TextSize = 12, Font = F.bold, BackgroundColor3 = T.off, TextColor3 = T.text, AutoButtonColor = false,
@@ -21652,7 +22214,7 @@ function UIX.btnPane(parent, tg, W, z, resize)
         local sp = specOf(key)
         tb.Text = sp and sp.t or ""
         for _, fn in ipairs(painters) do fn() end
-        local h = on and fullH or 66
+        local h = on and fullH or 84
         pane.Size = UDim2.fromOffset(W, h)
         if resize then resize(h) end
     end
@@ -21661,7 +22223,7 @@ function UIX.btnPane(parent, tg, W, z, resize)
         layout()
     end)
     layout()
-    return pane, layout, function() return specOf(key) and fullH or 66 end
+    return pane, layout, function() return specOf(key) and fullH or 84 end
 end
 
 function Sec:BtnManager()
@@ -21671,7 +22233,17 @@ function Sec:BtnManager()
     local add = new("TextButton", { Size = UDim2.new(1, 0, 0, 30), Text = "Add a button...", TextSize = 12, Font = F.bold, AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = 0 }, holder)
     corner(add, 7); bindTheme(add, "BackgroundColor3", "off"); bindTheme(add, "TextColor3", "text")
     bindTheme(stroke(add, T.line, 1, 0), "Color", "line")
-    local listF = new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1 }, holder)
+    local bar = new("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1 }, holder)
+    local function barBtn(text, x0, x1)
+        local bb = new("TextButton", { Position = UDim2.new(x0, x0 > 0 and 2 or 0, 0, 0), Size = UDim2.new(x1 - x0, x0 > 0 and -2 or -2, 1, 0), Text = text, TextSize = 11, Font = F.bold,
+            AutoButtonColor = false, BorderSizePixel = 0 }, bar)
+        corner(bb, 7); bindTheme(bb, "BackgroundColor3", "off"); bindTheme(bb, "TextColor3", "text")
+        return bb
+    end
+    local lockAll, unlockAll = barBtn("Lock all", 0, 0.5), barBtn("Unlock all", 0.5, 1)
+    lockAll.Activated:Connect(function() BTN.setLockAll(true) end)
+    unlockAll.Activated:Connect(function() BTN.setLockAll(false) end)
+    local listF = new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 2 }, holder)
     vlist(listF, 3)
     local function rebuild()
         for _, c in ipairs(listF:GetChildren()) do
@@ -21692,9 +22264,18 @@ function Sec:BtnManager()
             local rowF = new("Frame", { Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 0.5, BorderSizePixel = 0, LayoutOrder = i }, listF)
             bindTheme(rowF, "BackgroundColor3", "panel2"); corner(rowF, 8)
             local nm = label(rowF, tg and tg.text or k, 12, tg and "text" or "dim", F.med, XL)
-            nm.Size = UDim2.new(1, -118, 0, 16); nm.Position = UDim2.fromOffset(8, 3); nm.TextTruncate = Enum.TextTruncate.AtEnd
+            nm.Size = UDim2.new(1, -146, 0, 16); nm.Position = UDim2.fromOffset(8, 3); nm.TextTruncate = Enum.TextTruncate.AtEnd
             local wh = label(rowF, tg and tabOf(tg) or "not available here", 9, "dim", F.reg, XL)
-            wh.Size = UDim2.new(1, -118, 0, 12); wh.Position = UDim2.fromOffset(8, 19); wh.TextTruncate = Enum.TextTruncate.AtEnd
+            wh.Size = UDim2.new(1, -146, 0, 12); wh.Position = UDim2.fromOffset(8, 19); wh.TextTruncate = Enum.TextTruncate.AtEnd
+            local lkb = new("TextButton", { AnchorPoint = Vector2.new(1, 0.5), Size = UDim2.fromOffset(26, 22), Position = UDim2.new(1, -94, 0.5, 0), Text = "", AutoButtonColor = false,
+                BorderSizePixel = 0 }, rowF)
+            corner(lkb, 6)
+            local lkOn = sp and sp.lk == true
+            lkb.BackgroundColor3 = lkOn and T.acc or T.off
+            local lkg = lockGlyph(lkb, 14, lkOn and T.onacc or T.dim, 3)
+            lkg.frame.Position = UDim2.fromOffset(6, 4)
+            lkg.set(lkOn)
+            lkb.Activated:Connect(function() BTN.setLock(k, not BTN.isLocked(k)) end)
             local ed = new("TextButton", { AnchorPoint = Vector2.new(1, 0.5), Size = UDim2.fromOffset(58, 22), Position = UDim2.new(1, -32, 0.5, 0), Text = "Edit", TextSize = 11, Font = F.bold,
                 AutoButtonColor = false, BorderSizePixel = 0 }, rowF)
             corner(ed, 6); bindTheme(ed, "BackgroundColor3", "off"); bindTheme(ed, "TextColor3", "text")
@@ -21742,76 +22323,76 @@ UIX.sfx = SFX
 
 local FOLDER = "AfraidSide"
 local SUB = FOLDER .. "/sfx"
-local VER = "s2"
+local VER = "s3"
 local RATE = 22050
 local TAU = math.pi * 2
 
-local N = { C4 = 261.63, E4 = 329.63, G4 = 392, A4 = 440, B4 = 493.88, C5 = 523.25, D5 = 587.33, E5 = 659.25, F5 = 698.46, G5 = 783.99, A5 = 880, B5 = 987.77,
-    C6 = 1046.5, D6 = 1174.66, E6 = 1318.5, G6 = 1567.98, A6 = 1760, C7 = 2093 }
+local N = { A2 = 110, C3 = 130.81, D3 = 146.83, E3 = 164.81, F3 = 174.61, G3 = 196, A3 = 220, B3 = 246.94, C4 = 261.63, D4 = 293.66, E4 = 329.63, F4 = 349.23,
+    G4 = 392, A4 = 440, B4 = 493.88, C5 = 523.25, D5 = 587.33, E5 = 659.25 }
 
 local SPEC = {}
 do
-    local function arp(list, t0, step, d, a, w, extra)
+    local function note(f, t, d, a, o)
+        local v = { f = f, t = t, d = d, a = a, dc = 2.4, at = 0.009, lp = 0.3 }
+        v.h = f < 200 and { { 2, 0.8 }, { 3, 0.4 }, { 4, 0.12 } } or { { 2, 0.34 }, { 3, 0.12 } }
+        if o then for k, x in pairs(o) do v[k] = x end end
+        return v
+    end
+    local function soft(list, t0, step, d, a, o)
         local v = {}
-        for i, f in ipairs(list) do
-            local o = { w = w or "sine", f = f, t = t0 + (i - 1) * step, d = d, a = a, dc = 2.2 }
-            if extra then for k, x in pairs(extra) do o[k] = x end end
-            v[#v + 1] = o
-        end
+        for i, f in ipairs(list) do v[#v + 1] = note(f, t0 + (i - 1) * step, d, a, o) end
         return v
     end
     local function cat(a, b) for _, x in ipairs(b) do a[#a + 1] = x end return a end
+    local function air(t, d, a, lp, at) return { w = "noise", lp = lp or 0.1, f = 1, t = t, d = d, a = a, dc = 1.4, at = at or 0.05 } end
 
-    SPEC.on = { len = 0.46, echo = { 0.075, 0.28 }, v = { { f = N.E5, d = 0.22, a = 0.5, dc = 2.2, h = { { 2, 0.18 }, { 3, 0.06 } } }, { f = N.A5, t = 0.07, d = 0.32, a = 0.5, dc = 2.2, h = { { 2, 0.15 } } } } }
-    SPEC.off = { len = 0.44, echo = { 0.075, 0.25 }, v = { { f = N.A5, d = 0.18, a = 0.4, dc = 2.2, h = { { 2, 0.12 } } }, { f = N.D5, t = 0.07, d = 0.32, a = 0.45, dc = 2.2, h = { { 2, 0.15 } } } } }
-    SPEC.menu_open = { len = 0.7, echo = { 0.09, 0.32 }, v = cat(arp({ N.C5, N.E5, N.G5, N.C6 }, 0, 0.04, 0.3, 0.3, "sine", { h = { { 2, 0.2 } } }),
-        { { w = "noise", lp = 0.12, f = 1, d = 0.28, a = 0.12, dc = 1.2, at = 0.09 } }) }
-    SPEC.menu_close = { len = 0.52, echo = { 0.08, 0.25 }, v = arp({ N.C6, N.G5, N.E5, N.C5 }, 0, 0.035, 0.2, 0.26, "sine", { h = { { 2, 0.15 } } }) }
-    SPEC.click = { len = 0.07, v = { { w = "tri", f = 1700, f2 = 1000, d = 0.035, a = 0.45, dc = 3, at = 0.001 }, { w = "noise", lp = 0.5, f = 1, d = 0.012, a = 0.2, dc = 2, at = 0.0005 } } }
-    SPEC.tab = { len = 0.15, v = { { f = 700, f2 = 560, d = 0.1, a = 0.4, dc = 2.5, h = { { 2, 0.3 } } } } }
-    SPEC.dd = { len = 0.16, v = { { f = 480, f2 = 760, d = 0.11, a = 0.3, dc = 1.6 } } }
-    SPEC.slide = { len = 0.05, v = { { f = 1000, d = 0.028, a = 0.2, dc = 2, at = 0.001 } } }
-    SPEC.notify = { len = 1.0, echo = { 0.13, 0.3 }, v = { { f = N.E6, d = 0.65, a = 0.4, dc = 2.5, h = { { 2.01, 0.35 }, { 3, 0.18 }, { 4.2, 0.1 } } },
-        { f = N.A6, t = 0.11, d = 0.65, a = 0.35, dc = 2.5, h = { { 2.01, 0.3 }, { 3, 0.12 } } } } }
-    SPEC.err = { len = 0.45, v = { { w = "tri", lp = 0.5, f = 233, f2 = 190, d = 0.18, a = 0.55, dc = 1.5 }, { w = "tri", lp = 0.5, f = 196, f2 = 150, t = 0.14, d = 0.26, a = 0.55, dc = 1.5 } } }
-    SPEC.bind = { len = 0.34, v = { { f = N.C6, d = 0.14, a = 0.4, dc = 2 }, { f = N.G6, t = 0.07, d = 0.24, a = 0.4, dc = 2.2 } } }
-    SPEC.place = { len = 0.2, v = { { f = 170, f2 = 75, d = 0.15, a = 0.75, dc = 2, at = 0.002 }, { w = "noise", lp = 0.18, f = 1, d = 0.03, a = 0.3, dc = 2, at = 0.0005 } } }
-    SPEC.tap = { len = 0.11, v = { { f = 660, f2 = 440, d = 0.075, a = 0.4, dc = 2.2, h = { { 2, 0.2 } } } } }
+    SPEC.on = { len = 0.52, echo = { 0.085, 0.24 }, v = { note(N.D3, 0, 0.3, 0.58), note(N.A3, 0.08, 0.38, 0.56) } }
+    SPEC.off = { len = 0.5, echo = { 0.085, 0.22 }, v = { note(N.A3, 0, 0.26, 0.5), note(N.D3, 0.08, 0.38, 0.58) } }
+    SPEC.menu_open = { len = 0.8, echo = { 0.1, 0.3 }, v = cat(soft({ N.D3, N.A3, N.D4 }, 0, 0.07, 0.42, 0.46, { at = 0.02 }), { air(0, 0.4, 0.14, 0.12, 0.14) }) }
+    SPEC.menu_close = { len = 0.6, echo = { 0.09, 0.26 }, v = cat(soft({ N.D4, N.A3, N.D3 }, 0, 0.06, 0.3, 0.42, { at = 0.012 }), { air(0, 0.26, 0.1, 0.1, 0.02) }) }
+    SPEC.click = { len = 0.08, v = { note(300, 0, 0.05, 0.6, { f2 = 150, dc = 3, at = 0.002, h = { { 2, 0.3 } } }), air(0, 0.014, 0.22, 0.1, 0.0005) } }
+    SPEC.tab = { len = 0.16, v = { note(330, 0, 0.11, 0.5, { f2 = 220, dc = 2.5, at = 0.003, h = { { 2, 0.3 } } }) } }
+    SPEC.dd = { len = 0.17, v = { note(220, 0, 0.13, 0.46, { f2 = 330, dc = 1.8, at = 0.004, h = { { 2, 0.28 } } }) } }
+    SPEC.slide = { len = 0.05, v = { note(260, 0, 0.032, 0.32, { dc = 2, at = 0.002, h = { { 2, 0.2 } } }) } }
+    SPEC.notify = { len = 1.05, echo = { 0.13, 0.3 }, v = { note(N.A3, 0, 0.75, 0.52, { dc = 2.6, at = 0.006, h = { { 2.01, 0.4 }, { 3, 0.2 }, { 4.2, 0.06 } } }),
+        note(N.E4, 0.12, 0.75, 0.44, { dc = 2.6, at = 0.006, h = { { 2.01, 0.35 }, { 3, 0.14 } } }) } }
+    SPEC.err = { len = 0.5, echo = { 0.07, 0.2 }, v = { note(N.F3, 0, 0.2, 0.55, { w = "tri", lp = 0.22 }), note(N.D3, 0.14, 0.3, 0.55, { w = "tri", lp = 0.22 }) } }
+    SPEC.bind = { len = 0.36, echo = { 0.06, 0.2 }, v = { note(N.A3, 0, 0.16, 0.5), note(N.E4, 0.07, 0.26, 0.5) } }
+    SPEC.place = { len = 0.22, v = { note(140, 0, 0.17, 0.8, { f2 = 60, dc = 2, at = 0.003, h = { { 2, 0.3 }, { 3, 0.15 } } }), air(0, 0.035, 0.26, 0.2, 0.0005) } }
+    SPEC.tap = { len = 0.12, v = { note(280, 0, 0.085, 0.5, { f2 = 190, dc = 2.4, at = 0.003, h = { { 2, 0.3 } } }) } }
 
-    local function sq(f, t, d, a, f2) return { w = "sq", lp = 0.35, f = f, f2 = f2, t = t, d = d, a = a or 0.33, dc = 1.2 } end
-    SPEC.on_p = { len = 0.32, v = { sq(N.C5, 0, 0.09), sq(N.G5, 0.07, 0.09), sq(N.C6, 0.14, 0.16) } }
-    SPEC.off_p = { len = 0.32, v = { sq(N.C6, 0, 0.09), sq(N.G5, 0.07, 0.09), sq(N.C5, 0.14, 0.16) } }
-    SPEC.menu_open_p = { len = 0.46, v = { sq(N.E5, 0, 0.08), sq(N.G5, 0.06, 0.08), sq(N.B5, 0.12, 0.08), sq(N.E6, 0.18, 0.22) } }
-    SPEC.menu_close_p = { len = 0.4, v = { sq(N.E6, 0, 0.07), sq(N.B5, 0.05, 0.07), sq(N.G5, 0.1, 0.07), sq(N.E5, 0.15, 0.16) } }
-    SPEC.click_p = { len = 0.06, v = { sq(880, 0, 0.035, 0.3, 1320) } }
-    SPEC.tab_p = { len = 0.09, v = { sq(N.C5, 0, 0.07, 0.3, N.G5) } }
-    SPEC.dd_p = { len = 0.11, v = { { w = "tri", f = 392, f2 = 587, d = 0.09, a = 0.4, dc = 1.2 } } }
-    SPEC.slide_p = { len = 0.04, v = { sq(1200, 0, 0.022, 0.15) } }
-    SPEC.notify_p = { len = 0.45, v = { sq(N.E6, 0, 0.12, 0.3), sq(N.A6, 0.1, 0.3, 0.3) } }
-    SPEC.err_p = { len = 0.38, v = { { w = "sq", lp = 0.25, f = 196, t = 0, d = 0.14, a = 0.35, dc = 0.8 }, { w = "sq", lp = 0.25, f = 147, t = 0.1, d = 0.26, a = 0.35, dc = 1.4 } } }
-    SPEC.bind_p = { len = 0.36, v = { sq(N.C6, 0, 0.06), sq(N.E6, 0.06, 0.06), sq(N.G6, 0.12, 0.18) } }
-    SPEC.place_p = { len = 0.18, v = { { w = "tri", f = 130, f2 = 60, d = 0.13, a = 0.8, dc = 1.5, at = 0.002 }, { w = "noise", lp = 0.2, f = 1, d = 0.025, a = 0.25, dc = 2, at = 0.0005 } } }
-    SPEC.tap_p = { len = 0.07, v = { sq(740, 0, 0.045, 0.3) } }
+    local function sq(f, t, d, a, f2) return { w = "sq", lp = 0.14, f = f, f2 = f2, t = t, d = d, a = a or 0.4, dc = 1.4, at = 0.006 } end
+    SPEC.on_p = { len = 0.34, v = { sq(N.C4, 0, 0.1), sq(N.G4, 0.07, 0.1), sq(N.C5, 0.14, 0.18) } }
+    SPEC.off_p = { len = 0.34, v = { sq(N.C5, 0, 0.1), sq(N.G4, 0.07, 0.1), sq(N.C4, 0.14, 0.18) } }
+    SPEC.menu_open_p = { len = 0.5, v = { sq(N.E4, 0, 0.09), sq(N.G4, 0.06, 0.09), sq(N.B4, 0.12, 0.09), sq(N.E5, 0.18, 0.24) } }
+    SPEC.menu_close_p = { len = 0.44, v = { sq(N.E5, 0, 0.08), sq(N.B4, 0.05, 0.08), sq(N.G4, 0.1, 0.08), sq(N.E4, 0.15, 0.18) } }
+    SPEC.click_p = { len = 0.07, v = { sq(330, 0, 0.04, 0.4, 220) } }
+    SPEC.tab_p = { len = 0.1, v = { sq(N.C4, 0, 0.08, 0.36, N.G4) } }
+    SPEC.dd_p = { len = 0.12, v = { { w = "tri", lp = 0.3, f = 262, f2 = 392, d = 0.1, a = 0.45, dc = 1.2, at = 0.004 } } }
+    SPEC.slide_p = { len = 0.04, v = { sq(600, 0, 0.024, 0.2) } }
+    SPEC.notify_p = { len = 0.5, v = { sq(N.E4, 0, 0.13, 0.36), sq(N.A4, 0.1, 0.32, 0.36) } }
+    SPEC.err_p = { len = 0.4, v = { { w = "sq", lp = 0.14, f = 175, t = 0, d = 0.14, a = 0.4, dc = 0.8 }, { w = "sq", lp = 0.14, f = 131, t = 0.1, d = 0.28, a = 0.4, dc = 1.4 } } }
+    SPEC.bind_p = { len = 0.38, v = { sq(N.C4, 0, 0.07), sq(N.E4, 0.06, 0.07), sq(N.G4, 0.12, 0.2) } }
+    SPEC.place_p = { len = 0.2, v = { { w = "tri", lp = 0.3, f = 130, f2 = 60, d = 0.14, a = 0.8, dc = 1.5, at = 0.003 }, air(0, 0.03, 0.26, 0.2, 0.0005) } }
+    SPEC.tap_p = { len = 0.08, v = { sq(370, 0, 0.05, 0.36) } }
 
-    SPEC.pling = { len = 0.45, echo = { 0.1, 0.2 }, v = { { w = "tri", f = N.B5, d = 0.32, a = 0.55, dc = 2.2, h = { { 2, 0.25 }, { 3, 0.1 } } } } }
-    SPEC.pop = { len = 0.16, v = { { f = 280, f2 = 1100, d = 0.075, a = 0.6, dc = 1.5, cv = 0.5 }, { w = "noise", lp = 0.3, f = 1, d = 0.015, a = 0.18, dc = 2, at = 0.0005 } } }
-    SPEC.crit = { len = 0.4, echo = { 0.06, 0.22 }, v = { { f = N.G6, f2 = 2349, d = 0.15, a = 0.4, dc = 1.5, cv = 0.6, h = { { 2, 0.2 } } },
-        { w = "noise", lp = 0.7, f = 1, d = 0.12, a = 0.2, dc = 1.2, at = 0.004 }, { f = N.C7, t = 0.07, d = 0.24, a = 0.3, dc = 2 } } }
-    SPEC.coin = { len = 0.55, v = { { w = "sq", lp = 0.4, f = N.B5, d = 0.07, a = 0.33, dc = 0.3 }, { w = "sq", lp = 0.4, f = N.E6, t = 0.07, d = 0.42, a = 0.33, dc = 1.8 } } }
-    SPEC.bell = { len = 1.1, echo = { 0.15, 0.3 }, v = { { f = 880, d = 0.95, a = 0.45, dc = 2.4, h = { { 2.76, 0.4 }, { 5.4, 0.2 }, { 8.93, 0.1 } } } } }
-    SPEC.thump = { len = 0.32, v = { { f = 120, f2 = 50, d = 0.24, a = 0.9, dc = 1.8, at = 0.002 }, { w = "noise", lp = 0.15, f = 1, d = 0.04, a = 0.35, dc = 2, at = 0.0005 } } }
-    SPEC.xp = { len = 0.3, v = { { f = 900, f2 = 1800, d = 0.11, a = 0.4, dc = 1.2, cv = 0.7 }, { f = 1250, f2 = 2500, t = 0.07, d = 0.16, a = 0.4, dc = 1.8, cv = 0.7 } } }
-    SPEC.levelup = { len = 1.1, echo = { 0.12, 0.3 }, v = cat(arp({ N.C5, N.E5, N.G5, N.C6 }, 0, 0.08, 0.5, 0.3, "sine", { h = { { 2, 0.2 } } }), { { f = N.E6, t = 0.34, d = 0.65, a = 0.33, dc = 2.2, h = { { 2, 0.18 } } } }) }
-    SPEC.totem = { len = 1.3, echo = { 0.14, 0.3 }, v = { { f = 400, f2 = 1400, d = 0.75, a = 0.3, dc = 0.8, cv = 1.3, tr = 14, h = { { 2, 0.3 } } },
-        { f = 600, f2 = 2000, t = 0.1, d = 0.75, a = 0.2, dc = 0.8, cv = 1.3, tr = 11 }, { w = "noise", lp = 0.6, f = 1, t = 0.2, d = 0.6, a = 0.12, dc = 1, at = 0.2 },
-        { f = N.C6, t = 0.55, d = 0.7, a = 0.35, dc = 2, h = { { 2, 0.2 } } } } }
-    SPEC.anvil = { len = 0.65, v = { { f = 220, d = 0.55, a = 0.5, dc = 3, h = { { 1.51, 0.5 }, { 2.2, 0.4 }, { 3.4, 0.3 } }, at = 0.001 }, { w = "noise", lp = 0.5, f = 1, d = 0.02, a = 0.4, dc = 2, at = 0.0003 } } }
-    SPEC.jump = { len = 0.24, v = { { w = "noise", lp = 0.25, f = 1, d = 0.2, a = 0.2, dc = 1.2, at = 0.06 }, { f = 260, f2 = 620, d = 0.18, a = 0.2, dc = 1.6 } } }
-    SPEC.land = { len = 0.2, v = { { f = 95, f2 = 55, d = 0.15, a = 0.7, dc = 2 }, { w = "noise", lp = 0.1, f = 1, d = 0.05, a = 0.35, dc = 2, at = 0.0005 } } }
-    SPEC.mc_on = { len = 0.46, echo = { 0.06, 0.22 }, v = { { w = "tri", f = N.G5, d = 0.12, a = 0.45, dc = 2 }, { w = "tri", f = N.C6, t = 0.06, d = 0.14, a = 0.45, dc = 2 },
-        { f = N.G6, t = 0.12, d = 0.26, a = 0.35, dc = 2.4, h = { { 2, 0.15 } } } } }
-    SPEC.mc_off = { len = 0.4, v = { { w = "tri", f = N.C6, d = 0.1, a = 0.4, dc = 2 }, { w = "tri", f = N.G5, t = 0.06, d = 0.12, a = 0.4, dc = 2 }, { w = "tri", f = N.C5, t = 0.12, d = 0.22, a = 0.4, dc = 2.2 } } }
-    SPEC.toast = { len = 0.2, v = { { w = "noise", lp = 0.35, f = 1, d = 0.13, a = 0.18, dc = 1.5, at = 0.03 }, { f = 900, f2 = 1300, d = 0.11, a = 0.18, dc = 2 } } }
+    SPEC.pling = { len = 0.5, echo = { 0.1, 0.22 }, v = { note(N.A3, 0, 0.36, 0.58, { h = { { 2, 0.32 }, { 3, 0.14 } } }) } }
+    SPEC.pop = { len = 0.18, v = { note(160, 0, 0.1, 0.6, { f2 = 420, dc = 1.5, cv = 0.5, at = 0.003, h = { { 2, 0.2 } } }), air(0, 0.02, 0.18, 0.1, 0.0005) } }
+    SPEC.crit = { len = 0.46, echo = { 0.06, 0.22 }, v = { note(480, 0, 0.2, 0.55, { f2 = 240, dc = 1.6, cv = 0.6, at = 0.003, h = { { 2, 0.25 } } }),
+        air(0, 0.12, 0.2, 0.22, 0.004), note(N.A4, 0.06, 0.28, 0.3, { dc = 2.2, h = { { 2.01, 0.2 } } }) } }
+    SPEC.coin = { len = 0.55, echo = { 0.07, 0.18 }, v = { note(N.D4, 0, 0.08, 0.46, { w = "tri", lp = 0.22, dc = 1.2 }), note(N.A4, 0.075, 0.42, 0.46, { w = "tri", lp = 0.22, dc = 2 }) } }
+    SPEC.bell = { len = 1.2, echo = { 0.15, 0.3 }, v = { note(N.B3, 0, 1.0, 0.5, { dc = 2.4, lp = 0.35, h = { { 2.76, 0.34 }, { 5.4, 0.12 } } }) } }
+    SPEC.thump = { len = 0.34, v = { note(130, 0, 0.26, 0.9, { f2 = 60, dc = 1.8, at = 0.002, h = { { 2, 0.35 }, { 3, 0.18 } } }), air(0, 0.04, 0.34, 0.2, 0.0005) } }
+    SPEC.xp = { len = 0.34, echo = { 0.06, 0.18 }, v = { note(N.D4, 0, 0.12, 0.5, { f2 = 330, dc = 1.4, cv = 0.7 }), note(N.A4, 0.08, 0.2, 0.46, { f2 = 500, dc = 1.8, cv = 0.7 }) } }
+    SPEC.levelup = { len = 1.3, echo = { 0.13, 0.32 }, v = cat(soft({ N.D3, N.F3, N.A3, N.D4 }, 0, 0.09, 0.55, 0.46), { note(N.A4, 0.36, 0.8, 0.34, { dc = 2.2 }) }) }
+    SPEC.totem = { len = 1.5, echo = { 0.14, 0.3 }, v = { note(N.D3, 0, 1.0, 0.34, { at = 0.16, dc = 1.4 }), note(N.A3, 0.04, 1.0, 0.3, { at = 0.16, dc = 1.4 }), note(N.D4, 0.08, 0.95, 0.26, { at = 0.16, dc = 1.4 }),
+        air(0, 0.7, 0.1, 0.08, 0.2), note(N.D4, 0.55, 0.85, 0.34, { dc = 2.2, h = { { 2.01, 0.25 } } }) } }
+    SPEC.anvil = { len = 0.7, v = { note(180, 0, 0.55, 0.55, { dc = 3, at = 0.002, h = { { 1.51, 0.34 }, { 2.2, 0.24 }, { 3.4, 0.1 } } }), air(0, 0.03, 0.3, 0.14, 0.0003) } }
+    SPEC.jump = { len = 0.26, v = { air(0, 0.22, 0.26, 0.1, 0.06), note(200, 0, 0.18, 0.26, { f2 = 330, dc = 1.6, at = 0.01, h = { { 2, 0.2 } } }) } }
+    SPEC.land = { len = 0.22, v = { note(110, 0, 0.17, 0.8, { f2 = 55, dc = 2, at = 0.003, h = { { 2, 0.3 }, { 3, 0.15 } } }), air(0, 0.04, 0.3, 0.2, 0.0005) } }
+    SPEC.mc_on = { len = 0.5, echo = { 0.07, 0.22 }, v = soft({ N.D3, N.A3, N.D4 }, 0, 0.06, 0.3, 0.48, { at = 0.008 }) }
+    SPEC.mc_off = { len = 0.46, echo = { 0.07, 0.2 }, v = soft({ N.D4, N.A3, N.D3 }, 0, 0.06, 0.28, 0.46, { at = 0.008 }) }
+    SPEC.toast = { len = 0.22, v = { note(300, 0, 0.12, 0.34, { f2 = 400, dc = 1.8, at = 0.006, h = { { 2, 0.2 } } }), air(0, 0.1, 0.1, 0.08, 0.03) } }
 end
 
 local CAT = { on = "switch", off = "switch", mc_on = "switch", mc_off = "switch", menu_open = "menu", menu_close = "menu" }
@@ -35491,6 +36072,319 @@ end
 
 return M
 end)()
+MISC.BDC = (function()
+local M = {}
+local TG = TAG .. "bdc"
+local CAS = svc("ContextActionService")
+
+local TSB_PLACES = { [10449761463] = true, [10449761464] = true }
+local REMOTE_NAME = "Communicate"
+local ARG_GOAL, ARG_KEY, ARG_DASH = "Goal", "Key", "Dash"
+local GOAL_PRESS, GOAL_RELEASE = "KeyPress", "KeyRelease"
+
+M.METHODS = { "Auto", "Virtual input", "Executor keys", "Game remote" }
+M.TRIGGERS = { "Skill keys", "Key or button" }
+M.DIRS = { "Back (S)", "Left (A)", "Right (D)", "Forward (W)" }
+M.DASH_KEYS = { "Q", "E", "R", "T", "F", "G", "Z", "X", "C", "V", "LeftShift" }
+M.SKILLS = { "1", "2", "3", "4" }
+local DIR_KEY = { ["Back (S)"] = "S", ["Left (A)"] = "A", ["Right (D)"] = "D", ["Forward (W)"] = "W" }
+local SKILL_CODE = { ["1"] = "One", ["2"] = "Two", ["3"] = "Three", ["4"] = "Four" }
+local CODE_SKILL = { One = "1", Two = "2", Three = "3", Four = "4" }
+
+local VK = { LeftShift = 0xA0, One = 0x31, Two = 0x32, Three = 0x33, Four = 0x34 }
+for i = 0, 25 do VK[string.char(65 + i)] = 0x41 + i end
+
+local S = {
+    seq = nil, nextOk = 0, count = 0, lastSkill = nil, lastWhy = "",
+    bound = false, swallowed = {}, synthEnd = {}, status = "Off", err = nil, errT = -10,
+    heldByUs = {}, label = nil, nextLabel = 0, vim = nil, vimTried = false,
+}
+M.S = S
+
+local function warnOnce(e)
+    local now = os.clock()
+    if now - S.errT > 10 then S.errT = now; report("bdc", e) end
+end
+
+local function keyCode(name)
+    local ok, v = pcall(function() return Enum.KeyCode[name] end)
+    if ok then return v end
+end
+
+local function vimSvc()
+    if S.vim then return S.vim end
+    if S.vimTried then return nil end
+    S.vimTried = true
+    local ok, v = pcall(function() return svc("VirtualInputManager") end)
+    if ok and v then S.vim = v end
+    return S.vim
+end
+
+local function execKeys()
+    local ok, kp, kr = pcall(function() return keypress, keyrelease end)
+    if ok and type(kp) == "function" and type(kr) == "function" then return kp, kr end
+end
+
+local function isDown(name)
+    local kc = keyCode(name)
+    if not kc then return false end
+    local ok, d = pcall(UIS.IsKeyDown, UIS, kc)
+    return ok and d == true
+end
+
+local function method()
+    local m = cfg.bdcMethod
+    if m == "Virtual input" or m == "Executor keys" or m == "Game remote" then return m end
+    if vimSvc() then return "Virtual input" end
+    if execKeys() then return "Executor keys" end
+    return "Virtual input"
+end
+M.method = method
+
+local function character()
+    local ch = lp.Character
+    local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health > 0 then return ch, hum end
+end
+
+local function fireRemote(goal, key, dir)
+    local ch = character()
+    local rem = ch and ch:FindFirstChild(REMOTE_NAME)
+    if not (rem and rem:IsA("RemoteEvent")) then return false, "no " .. REMOTE_NAME .. " remote on the character" end
+    local arg = {}
+    arg[ARG_GOAL] = goal
+    arg[ARG_KEY] = keyCode(key)
+    if dir then arg[ARG_DASH] = keyCode(dir) end
+    return pcall(rem.FireServer, rem, arg)
+end
+
+local function rawKey(name, down)
+    local m = method()
+    if m == "Executor keys" then
+        local kp, kr = execKeys()
+        local vk = VK[name]
+        if not (kp and vk) then return false, "keypress is not available here" end
+        return pcall(down and kp or kr, vk)
+    end
+    local vim = vimSvc()
+    local kc = keyCode(name)
+    if not (vim and kc) then return false, "VirtualInputManager is not available here" end
+    return pcall(vim.SendKeyEvent, vim, down, kc, false, game)
+end
+
+local STEP = {
+    hold = function(p)
+        if method() == "Game remote" then return true end
+        if isDown(p.dir) then return true end
+        S.heldByUs[p.dir] = true
+        return rawKey(p.dir, true)
+    end,
+    dashDown = function(p)
+        if method() == "Game remote" then return fireRemote(GOAL_PRESS, p.dash, p.dir) end
+        return rawKey(p.dash, true)
+    end,
+    dashUp = function(p)
+        if method() == "Game remote" then return true end
+        return rawKey(p.dash, false)
+    end,
+    skillDown = function(p)
+        if method() == "Game remote" then return fireRemote(GOAL_PRESS, p.skill) end
+        return rawKey(p.skill, true)
+    end,
+    skillUp = function(p)
+        if method() == "Game remote" then return fireRemote(GOAL_RELEASE, p.skill) end
+        S.synthEnd[CODE_SKILL[p.skill] or ""] = true
+        return rawKey(p.skill, false)
+    end,
+    release = function(p)
+        if S.heldByUs[p.dir] then
+            S.heldByUs[p.dir] = nil
+            if method() ~= "Game remote" then return rawKey(p.dir, false) end
+        end
+        return true
+    end,
+}
+
+local function releaseAll()
+    for k in pairs(S.heldByUs) do
+        S.heldByUs[k] = nil
+        if method() ~= "Game remote" then pcall(rawKey, k, false) end
+    end
+end
+
+local function ready()
+    if not character() then return false, "no character" end
+    if UIS:GetFocusedTextBox() then return false, "typing" end
+    if UI.isOpen and UI.isOpen() then return false, "menu open" end
+    return true
+end
+
+local function skillList()
+    local out = {}
+    local sel = cfg.bdcSkills
+    for _, s in ipairs(M.SKILLS) do
+        if type(sel) == "table" and sel[s] then out[#out + 1] = s end
+    end
+    return out
+end
+
+local function mainSkill()
+    local l = skillList()
+    return l[1] or "1"
+end
+
+function M.fire(skillName, why)
+    local now = os.clock()
+    if S.seq then return false, "busy" end
+    if now < S.nextOk then return false, "cooldown" end
+    local ok, reason = ready()
+    if not ok then return false, reason end
+    local skill = SKILL_CODE[skillName or mainSkill()] or "One"
+    local dir = DIR_KEY[cfg.bdcDir] or "S"
+    local dash = tostring(cfg.bdcDash or "Q")
+    if not keyCode(dash) then dash = "Q" end
+    local delay = clamp((tonumber(cfg.bdcDelay) or 70) / 1000, 0, 0.5)
+    local hold = clamp((tonumber(cfg.bdcHold) or 40) / 1000, 0.016, 0.2)
+    local p = { dir = dir, dash = dash, skill = skill }
+    local t = 0
+    local items = {}
+    local function add(at, name) items[#items + 1] = { at = at, name = name } end
+    add(0, "hold")
+    t = 0.03
+    add(t, "dashDown")
+    add(t + 0.03, "dashUp")
+    local skillAt = t + math.max(delay, 0.03)
+    add(skillAt, "skillDown")
+    add(skillAt + 0.05, "skillUp")
+    add(skillAt + 0.05 + hold, "release")
+    S.seq = { t0 = now, i = 1, items = items, p = p, skillName = CODE_SKILL[skill] or "1", why = why or "" }
+    S.nextOk = now + clamp((tonumber(cfg.bdcCd) or 450) / 1000, 0.1, 5)
+    S.count = S.count + 1
+    S.lastSkill = S.seq.skillName
+    S.lastWhy = why or ""
+    return true
+end
+
+local function runSeq()
+    local q = S.seq
+    if not q then return end
+    local el = os.clock() - q.t0
+    while q.items[q.i] and q.items[q.i].at <= el do
+        local it = q.items[q.i]
+        q.i = q.i + 1
+        local ok, r1, r2 = pcall(STEP[it.name], q.p)
+        if not ok then
+            S.err = tostring(r1)
+            warnOnce(r1)
+        elseif r1 == false then
+            S.err = tostring(r2)
+            warnOnce(r2)
+        end
+    end
+    if not q.items[q.i] then S.seq = nil; S.synthEnd = {} end
+end
+
+local ACTION = TG .. "_keys"
+local function onKey(_, state, input)
+    local pass = Enum.ContextActionResult.Pass
+    local sink = Enum.ContextActionResult.Sink
+    local name = CODE_SKILL[input.KeyCode.Name]
+    if not name then return pass end
+    if state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+        if S.synthEnd[name] then S.synthEnd[name] = nil; return pass end
+        if S.swallowed[name] then S.swallowed[name] = nil; return sink end
+        return pass
+    end
+    if state ~= Enum.UserInputState.Begin then return pass end
+    if S.seq then return pass end
+    if not (cfg.bdcOn and cfg.bdcTrigger ~= "Key or button") then return pass end
+    local sel = cfg.bdcSkills
+    if not (type(sel) == "table" and sel[name]) then return pass end
+    if UI.getListening and UI.getListening() then return pass end
+    local ok = M.fire(name, "skill key " .. name)
+    if ok then
+        S.swallowed[name] = true
+        return sink
+    end
+    return pass
+end
+
+local function bindKeys()
+    if S.bound then return end
+    local ok, e = pcall(function()
+        CAS:BindActionAtPriority(ACTION, onKey, false, Enum.ContextActionPriority.High.Value + 100,
+            Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four)
+    end)
+    if ok then S.bound = true else warnOnce(e) end
+end
+
+local function unbindKeys()
+    if not S.bound then return end
+    S.bound = false
+    S.swallowed = {}
+    pcall(function() CAS:UnbindAction(ACTION) end)
+end
+
+bind(UIS.InputBegan, function(i, gp)
+    if gp or i.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    local k = cfg.bdcKey
+    if type(k) ~= "string" or k == "None" or k == "" then return end
+    if i.KeyCode.Name ~= k then return end
+    if UI.getListening and UI.getListening() then return end
+    if cfg.bdcKeyOn == false then return end
+    M.fire(nil, "key " .. k)
+end)
+
+function M.gameName()
+    if TSB_PLACES[game.PlaceId] then return "The Strongest Battlegrounds", true end
+    return "place " .. tostring(game.PlaceId), false
+end
+
+function M.statusText()
+    local gname, tsb = M.gameName()
+    local parts = {}
+    parts[#parts + 1] = cfg.bdcOn and "Armed" or "Off"
+    if cfg.bdcOn then
+        local l = skillList()
+        if cfg.bdcTrigger == "Key or button" then
+            parts[#parts + 1] = "own key or button"
+        else
+            parts[#parts + 1] = (#l > 0) and ("skills " .. table.concat(l, ", ")) or "no skills picked"
+        end
+    end
+    parts[#parts + 1] = method()
+    parts[#parts + 1] = ("fired %dx"):format(S.count)
+    local s = table.concat(parts, "  |  ")
+    s = s .. "\n" .. (tsb and "Game: " .. gname or ("Game: " .. gname .. " (not The Strongest Battlegrounds - keys may differ)"))
+    if S.err then s = s .. "\nLast problem: " .. S.err:sub(1, 80) end
+    return s
+end
+
+function M.step(dt)
+    local want = cfg.bdcOn == true and cfg.bdcTrigger ~= "Key or button"
+    if want and not S.bound then bindKeys() elseif not want and S.bound then unbindKeys() end
+    if S.seq then runSeq() end
+    local now = os.clock()
+    if S.label and now >= S.nextLabel then
+        S.nextLabel = now + 0.4
+        local t = M.statusText()
+        if S.label.Text ~= t then S.label.Text = t end
+    end
+end
+
+function M.cleanup()
+    unbindKeys()
+    S.seq = nil
+    S.synthEnd = {}
+    releaseAll()
+end
+
+UIX.regAction("bdc_now", "BDC now", "Combat  |  Back dash cancel", {
+    tap = function() M.fire(nil, "button") end,
+})
+
+return M
+end)()
 MISC.CFGC = (function()
 
 local M = {}
@@ -42177,6 +43071,25 @@ do
     s4:Toggle("aimLine", "Line to the target", D.aimLine)
     s4:ActionButton("Aim screen button", "aim_hold")
     s4:Label("Camera turns the view toward the target. Mouse moves the cursor relatively (needs mousemoverel). Hold uses the key, right mouse or your own screen button (created above; nothing appears by itself).")
+
+    local BD = MISC.BDC
+    local sb = tCombat:Section("L", "Back dash cancel", nil)
+    local gb = sb:Group("bdcOn", "Auto BDC", D.bdcOn)
+    gb:Segment("bdcTrigger", "Trigger", BD.TRIGGERS, D.bdcTrigger)
+    gb:Dropdown("bdcSkills", "Skills", BD.SKILLS, D.bdcSkills, true)
+    gb:Dropdown("bdcDir", "Dash direction", BD.DIRS, D.bdcDir, false)
+    gb:Dropdown("bdcDash", "Dash key", BD.DASH_KEYS, D.bdcDash, false)
+    gb:Slider("bdcDelay", "Skill delay", 0, 300, D.bdcDelay, 0, " ms")
+    gb:Slider("bdcHold", "Release after", 16, 200, D.bdcHold, 0, " ms")
+    gb:Slider("bdcCd", "Cooldown", 100, 2000, D.bdcCd, 0, " ms")
+    gb:Dropdown("bdcMethod", "Input method", BD.METHODS, D.bdcMethod, false)
+    gb:Keybind("bdcKey", "Own key", D.bdcKey, function(v)
+        if v == "Backspace" or v == "Delete" then Flags.bdcKey:Set("None") end
+    end)
+    gb:ActionButton("BDC screen button", "bdc_now")
+    BD.S.label = gb:Label("")
+    gb:Label("Press a picked skill key and the script holds the dash direction, taps the dash key, waits the skill delay and taps the skill: the dash is cut by the skill. Lower the delay if the skill comes out too late, raise it if the dash does not happen. Key or button mode leaves the skill keys alone and only reacts to your own key or the screen button. If a skill fires twice, switch the trigger to Key or button."
+    )
 end
 
 local tFake = UITab("Fake visuals", "ic_ghost", nil)
@@ -43508,6 +44421,7 @@ local function step(dt)
     try("combat", COMBAT.step, dt)
     try("client hud", MC.step, dt)
     try("aim", MISC.AIM.step, dt)
+    try("bdc", MISC.BDC.step, dt)
     try("fake visuals", MISC.DECOY.step, dt)
     try("engine", MISC.ENG.step, dt)
     try("mm2", MISC.MM2.step, dt)
@@ -43589,6 +44503,7 @@ unload = function()
     pcall(COMBAT.cleanup)
     pcall(MC.cleanup)
     pcall(MISC.AIM.cleanup)
+    pcall(MISC.BDC.cleanup)
     pcall(MISC.ENG.cleanup)
     pcall(MISC.MM2.cleanup)
     pcall(MISC.DH.cleanup)
@@ -43626,7 +44541,7 @@ genv.AFRAID_SIDE = API
 if genv.AS_TEST == true then
     genv.AS_TEST = { cfg = cfg, Flags = Flags, W = W, FX = FX, GL = GL, OPT = OPT, UI = UI, Gov = Gov, dirty = dirty, mark = mark, LOG = LOG, unload = unload,
         COS = COS, ESP = ESP, COMBAT = COMBAT, HUD = HUD, SC = SC, WX_TYPES = WX_TYPES, PTL = MISC.PTL, SEAL = MISC.SEAL, CONST = MISC.CONST, ACC = ACC, CHAR = CHAR, AVA = AVA, CAT = CAT,
-        MC = MC, MM2 = MISC.MM2, DH = MISC.DH, MOVE = MISC.MOVE, AIM = MISC.AIM, ENG = MISC.ENG, DECOY = MISC.DECOY, CFGC = MISC.CFGC, PRESET_NAMES = PRESET_NAMES, PRESETS = PRESETS, SKY_ID = SKY_ID, SKY_LOOK = SKY_LOOK, SKY_OPTIONS = SKY_OPTIONS, Assets = Assets, D = D, UIX = UIX, MESH = MESH }
+        MC = MC, MM2 = MISC.MM2, DH = MISC.DH, MOVE = MISC.MOVE, AIM = MISC.AIM, BDC = MISC.BDC, ENG = MISC.ENG, DECOY = MISC.DECOY, CFGC = MISC.CFGC, PRESET_NAMES = PRESET_NAMES, PRESETS = PRESETS, SKY_ID = SKY_ID, SKY_LOOK = SKY_LOOK, SKY_OPTIONS = SKY_OPTIONS, Assets = Assets, D = D, UIX = UIX, MESH = MESH }
 end
 
 UIX.arrange({
